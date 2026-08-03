@@ -234,4 +234,4 @@ Every hero-only mechanic in the base game — including roll behavior, crit mult
 
 --- 4.5 Hero-Only String Field (MOD_CLASS_STR_FIELDS) ---
 
-- potionPotencyMaxRarity (one of common|uncommon|rare|epic|legendary|mythic) — caps which potion rarities benefit from this hero's potionPotency bonus; any potion above the given rarity gets none of that bonus. Cleric sets this to "rare" alongside a high potionPotency value, so cheap potions get boosted hard while a lucky Legendary find isn't over-tuned.
+- potionPotencyMaxRarity (one of common|uncommon|rare|epic|legendary|mythic) — caps which potion rarities benefit from this hero's potionPotency bonus; any potion above the given rarity gets none of that bonus. Alchemist sets this to "rare" alongside a high potionPotency value, so cheap potions get boosted hard while a lucky Legendary find isn't over-tuned.

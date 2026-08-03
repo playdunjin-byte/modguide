@@ -231,7 +231,7 @@ As of this pass, most hero mechanics have been generalized into the fields above
 - Fatespinner — all damage is multiplied by (natural roll ÷ 10); each crit permanently raises the d20 by +1 (capped).
 - Bard — each discarded card grants +5 Mana to the next hand.
 - Broodmother — gains 2 potions after every battle won.
-- Ranger — rangerNoMartialMul and rangerMultX exist as generic fields you can set on a custom hero's bonus, but the code path that actually applies them still checks run.cls.id==="ranger" in the scoring functions — so setting these fields on a non-Ranger custom hero currently has no visible effect. This is very likely an oversight given that every other hero's equivalent field (bruteMartialMul, necroShadowMul, arcSuitMul, etc.) was generalized in the same pass; worth flagging for a follow-up fix if you want these two truly usable.
+- Ranger — rangerNoMartialMul and rangerMultX exist as generic fields you can set on a custom hero's bonus, but the code path that actually applies them still checks run.cls.id==="ranger" in the scoring functions — so setting these fields on a non-Ranger custom hero currently has no visible effect. Will be fixed later.
 
 If your custom hero concept needs a mechanic from the first list above, the correct approach is not to try to reproduce it via bonus fields — build it as a hook-driven relic instead (section 3.3) and bundle that relic into the hero's starting relics array. This is exactly how the base game gives some heroes their signature item (Knight starts with Paladin's Oath, Warden starts with Pilgrim's Pouch) — a starting relic is the standard extension point for a hero mechanic that goes beyond stat fields.
 

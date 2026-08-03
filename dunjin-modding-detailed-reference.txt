@@ -1,0 +1,386 @@
+Dunjin Modding — Detailed Reference
+
+This is the expanded companion to the main modding guide. Where the main guide gives you the shortest path to a working mod, this document goes deep on every field, every validator rule, every API function, and every gotcha — for when you're building something more ambitious than a single relic.
+
+Everything in this document is verified against the actual mod-loading and validation code (loadWorkshopMods, validateModRelic, validateModClass, validateModPotion, validateModEnemy, buildModApi), not inferred or assumed.
+
+================================================================
+1. Setup & File Structure
+================================================================
+
+Mods are Steam Workshop items, not manually-uploaded folders. The flow is:
+
+1. Enable mods: Settings -> Advanced -> Enable Mods (this is a stored preference, META.modsEnabled, and takes effect after a restart).
+2. Subscribe to a mod on the Steam Workshop.
+3. Restart the game. On boot, if mods are enabled, the game calls into a Steam bridge (window.dunjinDesktop.steam.getWorkshopModsSync) to read all subscribed Workshop items.
+4. The MODS button on the title screen lets you manage (enable/disable individually) and view errors for loaded mods — it does not accept raw file uploads directly; the files come from the Workshop subscription's synced folder.
+5. If mods are enabled but there's no Steam bridge (e.g. a browser build), mod loading is silently skipped — no error, just no mods.
+
+A mod is a folder (synced from Workshop) containing:
+
+- manifest.json — identity only. Fields: id, name, version, author. The id must be lowercase letters and digits only (regex: ^[a-z0-9]+$) and becomes the mod's namespace.
+- One or more content JSON files — each containing enemies / relics / potions / heroes arrays (or, for enemies specifically, the file can also just be a bare array). A mod doesn't need all four content types.
+
+Duplicate mod ids are rejected: if two subscribed Workshop items claim the same manifest id, the second one is skipped entirely with a "duplicate mod id" error.
+
+Load order: mods load after the base game's content pools exist and before any save is loaded, since saved runs can reference mod content by id string.
+
+--- Namespacing rules (strict) ---
+
+Every content item's id must:
+- Match ^[a-z0-9]+_[a-z0-9_]+$ — lowercase, at least one underscore separating a namespace segment from the rest.
+- Start with your mod's manifest id plus an underscore (e.g. mod id bogpack means every item id must start with bogpack_).
+- Not collide with any existing base-game relic or potion id, or (for heroes) any existing CLASSES id.
+
+Enemies have an additional constraint beyond id: the display name (n field) must be globally unique against every enemy in the base game and every other loaded mod. This is because the engine keys bestiary tracking, save resolution, and boss-encounter history by display name, not by id — ENEMY_ART[e.n], META.seenEnemies, run.defeatedEnemies, and run.lastBossName all store the name string directly. A duplicate name would silently corrupt another enemy's tracking data.
+
+--- Error handling ---
+
+Bad items are rejected loudly, not silently dropped. Every validator function calls modError(label, message) with a specific, actionable reason (e.g. "bogpack_ward: rarity must be one of common|uncommon|rare|epic|legendary|mythic") rather than just skipping the item with no explanation. Check the mod error log (surfaced via the MODS panel) after every restart — a typo that used to fail silently in early mod-support builds now tells you exactly what's wrong.
+
+--- ID immutability ---
+
+Once a save file references an item id, that id is permanently baked into that save. Renaming or removing an id after players have used it in a run will corrupt those saves — there is no migration path. Treat published ids as immutable. If an item needs a significant change, ship a new id and leave the old one in place (even as a no-op) rather than renaming.
+
+================================================================
+2. Enemies
+================================================================
+
+Enemies are pure data — no hooks, no code.
+
+{"enemies":[{"id":"bogpack_reaver","n":"Swamp Reaver","tier":"grunt","hp":70,"ac":9,"dmg":8,"shield":10,"armor":20,"atk":"poison","effect":"unsteady"}]}
+
+--- Fields & validation ranges ---
+
+- id — see namespacing rules above.
+- n — display name, 1-40 chars, globally unique (see above).
+- tier — one of grunt, vanguard, elite, boss. Sets the internal vanguard/elite/boss flags, which affect where the enemy can spawn and which unlock/encounter-tracking systems count it.
+- hp — 1 to 100,000.
+- ac — 0 to 20. This is a hard engine ceiling, not just a validator preference: startCombat() builds the live enemy with ac:Math.min(def.ac+acF,20), and the player's roll is clamped with total:Math.min(20,nat+bonus). An AC above 20 would be unreachable by any roll and therefore meaningless — the validator rejects it rather than let you publish an enemy whose stat block lies about itself.
+- dmg — 0 to 1000.
+- shield — 0 to 100,000 (optional, defaults 0). Stripped by Arcane damage.
+- armor — 0 to 100,000 (optional, defaults 0). Stripped by Shadow damage.
+- atk — must be one of the Attack Types list (section 9).
+- effect — optional. Must be one of the existing enum keys in BOSS_EFFECTS (the name is historical; despite the name, effects are not boss-exclusive — see below). Custom/novel effect keys are out of scope; only the base game's fixed effect set is available to mods.
+
+--- Effects are available to every tier ---
+
+The engine never actually gated effects on e.boss — startCombat() reads def.effect unconditionally to seed demandSigil / sourSigil / jammedIds, and every consumer checks combat.enemy.effect==="...", regardless of tier. Only two UI display sites (the bestiary tooltip and the combat ability badge) used to gate on e.boss, and both have since been un-gated to match the engine's actual behavior — so a modded grunt carrying an effect will correctly announce it to the player in the UI too. Base-game enemies only use effects on bosses as a design convention, not because the engine requires it; your mod is free to put unsteady on a grunt.
+
+--- Enemy Effects (full list) ---
+
+- numbed (Trembling Hands) — -2 hand size for the battle.
+- vulnerable (Cracked Ward) — you take +25% damage for the battle.
+- relicjam (Faulty Toolbelt) — disables 2 random relics every turn.
+- unsteady (Shaky Ground) — -2 to all d20 rolls for the battle.
+- potionseal (Sealed Satchel) — potions are disabled for the battle.
+- sigilsour (Hindrance) — a random sigil is fully nullified each hand (scores no Mana or Mult).
+- patternread (Open Book) — your most-played hand type this run is fully nullified.
+- weakened (Leaden Arms) — you deal -25% damage for the battle.
+- sigilread (Tipped Hand) — your most-played sigil so far this battle is fully nullified.
+- noescape (Cornered Rat) — 0 discards for the battle.
+- demand (Solemn Order) — a demanded sigil (changes every hand) must be played or you deal 50% less damage.
+- courtspurge (Court's Purge) — face cards (J/Q/K) are fully nullified for the battle.
+
+================================================================
+3. Relics
+================================================================
+
+Relics come in two flavors: stat-only (pure JSON, no code) and hook-driven (JavaScript logic). Prefer stat-only whenever possible — it's less error-prone and gets Echo Chamber mirroring and Relic Jam suppression for free, since relicSum(key) already walks every relic (mod or base-game) and the Echo Chamber mirror target the same way.
+
+--- 3.1 Stat-Only Relics ---
+
+{"relics":[{"id":"bogpack_ward","name":"Marsh Ward","rarity":"rare","desc":"Take 25% less Poison damage.","resistTypes":["poison"],"resistPct":0.25}]}
+
+A relic needs at least one hook or one recognized stat field — an empty relic is rejected. Every field you attach is validated against a strict numeric range (unknown fields are rejected loudly, not dropped silently — see section 1).
+
+--- 3.2 Full Stat Field Reference (with validated ranges) ---
+
+Hand economy
+- chips [-999, 999] — flat Mana added to every hand.
+- mult [-99, 99] — flat Mult added to every hand.
+- multX [0, 10] — Mult multiplier (applied after flat mult).
+- multPerCard [-20, 20] — Mult per card in the played hand.
+- combo — grants a bonus when a specific hand type (or "any") is played. Must be a valid HAND_TYPES key. Requires at least one of chips/mult/multX to also be set — a combo relic that grants nothing is rejected.
+- handSize [-3, 3], discards [-3, 3], hands [-2, 2] — resource caps for the run.
+
+Per-sigil scoring — fully symmetric across all four schools
+Every school has both a Chips (Mana) field and a Mult field:
+- Arcane: arcChips [-999, 999], arcMult [-99, 99]
+- Divine: divChips [-999, 999], divMult [-99, 99]
+- Shadow: shadowChips [-999, 999], shadowMult [-99, 99]
+- Martial: marChips [-999, 999], marMult [-99, 99]
+
+Example — Martial equivalent of Sage's Insight (previously there was no clean way to do this on relics; now it mirrors Arcane/Divine exactly):
+
+{"relics":[{"id":"bogpack_warcry","name":"War Cry Standard","rarity":"uncommon","desc":"+1 Mult per Martial card scored.","marMult":1}]}
+
+faceChips [-999, 999], faceMult [-99, 99] — per face card (J/Q/K) scored.
+oddChips [-999, 999] — per odd-rank card scored (mirrors Shadow Scrawl's pattern).
+monkMult [-99, 99] — Mult when 3+ distinct suits are played in one hand.
+
+Armor & combat rolls
+- armor [0, 200] — flat armor granted.
+- roll [-5, 5] — flat bonus to every d20 roll.
+- rollFloor [0, 20] — sets a minimum on rolled results.
+- critWiden [0, 5] — lowers the natural roll needed to crit.
+- noFumble — flag (true/false); prevents natural 1s from being a full miss.
+- rerollOne — flag (true/false); rerolls a natural 1 once (Lucky Charm's mechanic).
+
+Resistances & type interactions
+- resistTypes (array of attack types) + resistPct [0, 0.9] — % less damage taken from listed types. Must be declared together — declaring one without the other is rejected.
+- vsTypes + vsTypesPct [0, 2] — % more damage dealt to enemies using listed attack types. Same pairing rule.
+- vsTier (grunt|vanguard|elite|boss) + vsTierPct [0, 2] — % more damage dealt to a given enemy tier. Same pairing rule.
+- hpDmgPct, armorDmgPct, shieldDmgPct — each [-0.9, 2] — % modifiers to damage against each specific enemy resource layer.
+
+Economy & utility
+- luckBonus [-0.5, 0.5] — added chance on event, treasure, and camp rolls.
+- shopDiscount [0, 0.75] — % off shop prices.
+- potionPotency [-0.5, 2] — % stronger potions.
+- healAfter [0, 200] — flat HP healed after every battle.
+- goldAfter [0, 500] — flat gold gained after every battle.
+- healAfterPct [0, 0.5] — % of max HP healed after every battle. (Both healAfter and healAfterPct are legal on relics, despite healAfterPct originally being a hero-only pattern — Cleric uses it on her hero bonus, but the field is in the shared MOD_STAT_FIELDS table so a relic can use it too.)
+
+--- 3.3 Hook-Driven Relics ---
+
+{"relics":[{"id":"bogpack_hoard","name":"Bog Hoard","rarity":"rare","desc":"+1 Mult per 50 gold.","echoCompatKeys":["hoard_mult"],"hooks":{"onScoreHand":"api.addMult(Math.floor(api.run.gold()/50));"}}]}
+
+Allowed hooks on a relic: onScoreHand, onHandResolved, onDamageTaken, onBattleStart, onBattleEnd, onDiscard, onShopEvent, onPickup, onRoll, onNodeEnter. (Note: use is potion-only, not valid on a relic.)
+
+Echo Chamber mirroring is opt-in for hook-driven relics, because a hook can't be introspected the way a stat field can:
+- echoIncompatible: true — explicitly blocks mirroring. Use this for state-machine or once-per-run relics where duplication wouldn't make sense.
+- echoCompatKeys: ["some_key", ...] — declares that Echo Chamber can mirror this relic, and each key becomes a truthy flag directly on the relic object (which is exactly what the mirroring lookup tests for).
+- If you declare neither: a stats-only relic (no hooks, has recognized stat fields) is auto-mirrored for free, since relicSum() and the resist/vs reducers already walk the Echo Chamber target. A hook-driven relic (has hooks) with no explicit declaration defaults to echoIncompatible — silent, un-mirrorable — rather than silently doing nothing when "mirrored." A silent no-op mirror would be worse for players than an obvious omission.
+
+Persistent state: api.state.get(default) / api.state.set(value), auto-namespaced by the item's own id, so two mods (or two relics) can each keep a counter with zero collision risk. Values must be JSON-serializable or the set silently fails (with a logged error) rather than corrupting the save.
+
+================================================================
+4. Heroes
+================================================================
+
+Heroes combine base run stats with a bonus object, which becomes run.clsBonus internally. Fields in bonus draw from two separate pools:
+
+1. Relic-shared fields (MOD_STAT_FIELDS) — anything from section 3.2 above works identically here, since relicSum(key) already adds run.clsBonus[key] alongside relic totals. This is a deliberate design choice: a hero's bonus takes exactly the same whitelist as a relic's stat fields, no extra engine work required.
+2. Hero-only fields (MOD_CLASS_NUM_FIELDS / MOD_CLASS_FLAGS / MOD_CLASS_STR_FIELDS) — read directly off run.clsBonus by hand-written engine checks, and never flow through relicSum(). Declaring one of these on a RELIC would validate cleanly and then silently do nothing (relics never populate run.clsBonus) — which is exactly why they're validated only in validateModClass and kept out of the relic-facing whitelist entirely.
+
+{"heroes":[{"id":"bogpack_ranger","name":"Bog Ranger","rarity":"rare","desc":"Marsh hero.","blurb":"Patient tracker.","perks":"100 HP · +1 hand size · +1 Mult per Arcane card scored","hp":100,"gold":25,"color":"#7cbf57","bonus":{"handSize":1,"arcMult":1},"relics":["oath"],"potions":["heal"]}]}
+
+--- 4.1 Base Fields & Validation ---
+
+- hp — 1 to 500.
+- gold — 0 to 500 (optional, defaults 0).
+- blurb — required, max 200 chars.
+- perks — required, max 300 chars. This is the bullet-style summary on hero-select; nothing auto-generates it from bonus, so keep it manually in sync.
+- color — hex value like #9fd0ff (defaults to #cdb47e if omitted).
+- relics, potions — arrays of starting item ids, max 3 entries each. Must be base-game ids or ids belonging to this same mod — a hero cannot depend on another mod's content being installed.
+- cost — optional. If set (0 to 9999), the hero is coin-purchasable instead of free-from-start; unlockDesc defaults to "Purchase for N coins" if not supplied (max 120 chars).
+- Mod heroes cannot use unlockReq (a JS predicate function) the way base-game heroes can — hooks are strings/sandboxed, and a predicate over the player's META save data would need a second sandbox entirely. Mod heroes are therefore either free-from-start or cost-gated; there's no "beat this boss to unlock" path available to mods.
+
+--- 4.2 Hero-Only Fields (MOD_CLASS_NUM_FIELDS, with ranges) ---
+
+- startShield [0, 100] — flat starting shield, and also raises the run's max-shield tracking (relevant to Warden-style "healing restores shield" builds).
+- knightArmor [0, 50] — flat starting shield (Knight's field; functionally similar to startShield but does not touch max-shield tracking).
+- faceMultX [0, 3] — Mult multiplier per face card scored.
+- allOddMult [-10, 10] — bonus Mult if every card in the hand is odd-ranked.
+- allEvenMultX [0, 5] — Mult multiplier if every card in the hand is even-ranked.
+- arcSuitMul [0, 5] / arcSuitMonoMul [0, 5] — Mult multiplier when the hand's dominant perk suit is Arcane; the Mono variant applies when the hand is Arcane-only.
+- divSuitMul [0, 5] / divSuitMonoMul [0, 5] — same pattern for Divine.
+- bruteMartialMul [0, 5] / bruteMartialMonoMul [0, 5] — same pattern for Martial (Brute's signature field, but usable by any hero).
+- necroShadowMul [0, 5] / necroShadowMonoMul [0, 5] — same pattern for Shadow (Necromancer's signature field, but usable by any hero).
+- bruteRageX [0, 1] — Mult multiplier per hit taken this battle, stacking as the fight goes on.
+- maxPotions [-3, 6], maxRelicsBonus [-3, 6] — capacity adjustments.
+- critLow [2, 20] — crit threshold; lower it to widen the crit window (default trigger is a natural 20).
+- glancePct [0, 1] — damage % dealt on a glancing blow (base default is 0.5).
+- bardLuck [-0.5, 0.5] — added chance on event/treasure/camp rolls; stacks additively with the relic field luckBonus.
+- rangerNoMartialMul [0, 5] — Mult multiplier when the hand contains no Martial cards. Note: this field's value is read generically, but the check of whether to apply it is still hardcoded to run.cls.id==="ranger" in two places (see section 4.4) — setting this on a non-Ranger custom hero currently has no effect.
+- goldPerWin [0, 50] — flat gold per battle won.
+- ratkingRelicMult [0, 2] — Mult per relic held.
+
+--- 4.3 Hero-Only Flags (MOD_CLASS_FLAGS, true/false only) ---
+
+- wardenHeal — all healing also restores shield instead of just HP.
+- wardenArmorMult — +1 Mult per 25 shield currently held.
+- monkMultX — doubles (or 1.5x/2x depending on suit count) the monkMult bonus instead of adding it flatly.
+- graveBurial — the weakest unenchanted card is removed from the deck after every battle; +1 Mult per 2 cards missing from a full 52-card deck. (Gravekeeper's mechanic, now fully generic.)
+- twinSchoolDeck — the 52-card deck is restricted to two randomly-chosen schools at run start. (Twinsoul's mechanic, now fully generic.)
+- randomDeck — the 52-card deck is entirely randomized (any school, any rank, duplicates allowed). (Lottery Saint's mechanic, now fully generic.)
+- rangerMultX — doubles Mult on High Card/Pair hands. Note: like rangerNoMartialMul, the application of this flag's effect is still gated to run.cls.id==="ranger" in places — see section 4.4.
+- noDiscards — converts what would be discards into extra attacks instead (Bombardier's mechanic).
+
+--- 4.4 String Fields (MOD_CLASS_STR_FIELDS) ---
+
+- potionPotencyMaxRarity — one of the rarity tier strings (section 8). Caps which rarities benefit from the potionPotency bonus — e.g. "rare" means only common/uncommon/rare potions get the potency boost, epic and above don't.
+
+--- 4.5 Worked Example — combining fields ---
+
+A hero that leans into Shadow scoring with a mono-suit payoff and Warden-style armor synergy:
+
+{"heroes":[{"id":"bogpack_wraith","name":"Bog Wraith","rarity":"rare","desc":"Rot given shape.","blurb":"Feeds on decay and darkness.","perks":"95 HP · +2 Mana per Shadow card scored · +1 Mult per Shadow card scored · +10% Mult from Shadow hands (+15% if Shadow-mono) · Starts with 15 armor","hp":95,"gold":0,"color":"#5a7a5a","bonus":{"shadowChips":2,"shadowMult":1,"necroShadowMul":1.10,"necroShadowMonoMul":1.15,"knightArmor":15},"relics":[],"potions":[]}]}
+
+Note this combines both a relic-shared field (shadowChips/shadowMult, section 3.2) and hero-only fields (necroShadowMul/necroShadowMonoMul, knightArmor, section 4.2) in the same bonus object — both pools are usable together freely.
+
+--- 4.6 What's STILL Not Exposed — Genuinely Hardcoded Mechanics ---
+
+As of this pass, most hero mechanics have been generalized into the fields above. A smaller set remains hardcoded directly to a hero's id string and cannot currently be triggered by any bonus field on a modded hero, no matter what you set:
+
+- Duelist — a natural 1 becomes a glancing blow instead of a fumble; crits deal x2.5 instead of x2.
+- Necromancer — a natural 1 is reborn as a natural 20 (critical hit); +3 Mult on the next hand after a glancing blow.
+- Tank — x1.25 Mult against Vanguards and Elites; the reverse penalty against Grunts.
+- Craftsman — +15% relic drop rate, weighted toward higher rarities; 50% chance of a bonus relic on a one-shot kill.
+- Ratking — only common-rarity relics are ever offered, sold, or found.
+- Fatespinner — all damage is multiplied by (natural roll ÷ 10); each crit permanently raises the d20 by +1 (capped).
+- Bard — each discarded card grants +5 Mana to the next hand.
+- Broodmother — gains 2 potions after every battle won.
+- Ranger — rangerNoMartialMul and rangerMultX exist as generic fields you can set on a custom hero's bonus, but the code path that actually applies them still checks run.cls.id==="ranger" in the scoring functions — so setting these fields on a non-Ranger custom hero currently has no visible effect. This is very likely an oversight given that every other hero's equivalent field (bruteMartialMul, necroShadowMul, arcSuitMul, etc.) was generalized in the same pass; worth flagging for a follow-up fix if you want these two truly usable.
+
+If your custom hero concept needs a mechanic from the first list above, the correct approach is not to try to reproduce it via bonus fields — build it as a hook-driven relic instead (section 3.3) and bundle that relic into the hero's starting relics array. This is exactly how the base game gives some heroes their signature item (Knight starts with Paladin's Oath, Warden starts with Pilgrim's Pouch) — a starting relic is the standard extension point for a hero mechanic that goes beyond stat fields.
+
+================================================================
+5. Potions
+================================================================
+
+Potions are entirely hook-driven — there's no stat-only potion path, since a potion is inherently a one-time triggered effect.
+
+{"potions":[{"id":"bogpack_tonic","name":"Boiling Tonic","rarity":"uncommon","desc":"Deal 40 Arcane damage.","descT":"Deal {40} Arcane damage.","combatOnly":true,"hooks":{"use":"if(!api.combat.enemy())return false;api.dealDamage(40,{type:'arcane'});"}}]}
+
+--- Validation ---
+
+A potion requires a use hook — potions may also declare onScoreHand, onHandResolved, onDamageTaken, onBattleStart, onBattleEnd, onDiscard, onRoll, onNodeEnter (same pattern as relics, minus onShopEvent/onPickup, plus the mandatory use). Only these fields are accepted: id, name, rarity, desc, descT, svg, hooks, combatOnly — anything else is rejected loudly as an unknown field.
+
+- desc — static flavor/description text.
+- descT — templated description with numeric placeholders in braces (e.g. {40}), so the displayed number automatically reflects Potion Potency and similar modifiers. Use this instead of desc whenever the potion's effect includes a number that potency could change — descT is capped at 300 chars, same as desc.
+- combatOnly — if true, blocks the potion from being used outside battle automatically.
+- use hook — runs on consumption. Return false to cancel (no valid target, condition unmet) — the item is not consumed and nothing else fires.
+
+--- IMPORTANT: dealDamage's unit doubling ---
+
+api.dealDamage(n) already deals n damage — you do NOT need to double it yourself. The engine's internal applyDamage() halves its input on the first line (a historical artifact of how base-game potions compute their numbers — they all pass d*2 internally), and the api.dealDamage wrapper already compensates for this on your behalf. Writing api.dealDamage(40*2, ...) would deal 80, not 40. This is a common mistake if you're eyeballing base-game hook code for reference, since base-game potions predate the api wrapper and do their own doubling manually.
+
+--- Persistent Effects Across Turns ---
+
+Most potions are one-shot. To make an effect linger — checked again on future hands, turns, or battles:
+
+- api.armEffect({battles: N}) — keeps the potion's other hooks active for N more battles.
+- api.armEffect({hands: N}) — active for N more hands played.
+- api.armEffect({}) — active for the rest of the run (permanent flag).
+- api.clearEffect() — manually deactivates it early.
+
+Re-arming the same potion (drinking a second copy) refreshes the duration rather than stacking two independent timers — this is deliberate, so drinking two of the same potion can't accidentally double-fire every hook per turn.
+
+This is the mechanism behind "your next hand deals bonus damage" or "this battle, gain gold per hand played" style effects — use arms the effect, and a separate hook (commonly onScoreHand) checks whether it's still active and applies the bonus.
+
+================================================================
+6. The Hook & API System
+================================================================
+
+--- 6.1 Available Hooks ---
+
+- onBattleStart — fires once when combat begins.
+- onScoreHand — fires when a hand is scored, BEFORE the d20 is rolled. Most common hook for Mult/Mana-scaling relics.
+- onHandResolved — fires after a hand's full resolution, also before the roll (see the d20 timing note below — this is a frequent source of confusion).
+- onRoll — fires after the d20 roll resolves (mode and damage already locked in). This is the correct hook for "on a crit / on a fumble / on a specific roll" logic — the roll data functions (section 6.3) only return meaningful values from inside this hook or after it's fired.
+- onDamageTaken — fires when the player takes damage.
+- onDiscard — fires on a discard action.
+- onBattleEnd — fires when combat concludes (win or loss).
+- onShopEvent — fires on shop-related actions. (Relics only, not potions.)
+- onNodeEnter — fires when entering a map node.
+- onPickup — fires when the player picks up an item. (Relics only, not potions.)
+- use — potion-only; fires on consumption.
+
+--- 6.2 Sandboxing ---
+
+Loops are refused outright (for/while/do), not metered — there's no runtime parser available to inject a loop counter, so the only reliable guarantee against an infinite loop freezing the game is to disallow the construct entirely. Array methods (map, filter, reduce, every, some, forEach) remain fully available and are inherently bounded by the size of the data the api readers hand back, which covers real relic logic without the risk.
+
+The following are shadowed/blocked and cannot be referenced or reassigned inside a hook: window, document, globalThis, self, top, parent, frames, opener, run, combat, META, RELICS, POTIONS, ENEMIES, localStorage, sessionStorage, indexedDB, fetch, XMLHttpRequest, WebSocket, Worker, Function, require, process, module, exports, navigator, location, history, alert, open, postMessage, Reflect, Proxy, plus a handful of specific engine functions (saveMeta, saveGame, loadGame, applyDamage, damagePlayer, toast, sfx — the last two are shadowed because api.toast/api.sfx are the sanctioned, sanitized replacements).
+
+Max 4000 characters per hook snippet.
+
+--- 6.3 Key API Functions ---
+
+api.run — read-only run state:
+- gold(), hp(), maxHp(), depth(), deckSize(), deck(), hand() (arrays of {r, s, ench} card copies)
+- relics() (array of {id, rarity, jammed}), relicCount(id), hasRelic(id)
+- discardsLeft(), handsLeft(), armor() (includes Ironform's bonus), shield()
+- maxRelics(), maxPotions(), potions() (array of {id, name, rarity})
+- handSizeMax(), upgrades(), loop(), endless(), difficulty(), combatStreak()
+- luckyDie(), fated() ({armed, hand, factor}), echo() ({charges, copies}), rebound()
+- relicSellValues() (array of {id, sell})
+- nodeType(), seeded(), handUpgrade(key) ({chips, mult})
+- drawPile(), discardPile() (card-copy arrays), goldSpent(), deckAdds()
+- handPlayCounts(), suitPlayCounts() (running tallies)
+- deckCounts() — convenience summary: {bySuit, byRank, enchanted, total}
+
+api.combat — read-only combat state (null/empty outside battle):
+- enemy() — snapshot: {n, hp, maxHp, armorHp, shield, ac, atkType, effect, boss, elite, vanguard, cursed}. This is a snapshot, not the live object — a mod can't mutate the enemy directly except through dedicated mutators like dealDamage.
+- handType(), handsMax(), discardsMax(), enemyAttackType(), sigilCounts(), demandSigil(), handTypeCounts(), discardsUsed(), tookHit()
+- cardsPlayed() — the cards in the hand currently being scored (only meaningful inside scoring hooks).
+
+Roll data — read carefully, this is the single biggest source of subtle mod bugs:
+- roll() — the natural die (1-20), what the player sees on the d20.
+- rollTotal() — after modifiers (Fortune's Favor, Shaky Ground, etc.), clamped to 20.
+- rollBonus(), rollMode(), critThreshold()
+- isCrit(), isFumble(), isHit(), isGlance()
+
+Three things to know about roll data:
+1. These describe the MOST RECENTLY RESOLVED roll, not "this hand's roll." onScoreHand and onHandResolved both fire BEFORE the die is thrown, so inside them these functions return the PREVIOUS hand's roll — and null on the first hand of a battle (combat is rebuilt per fight, snapshot starts absent). Inside onRoll, they describe the roll that just landed — that's the hook to use for "on a crit / on a natural 7" logic.
+2. roll() is the natural die value; rollTotal() is after modifiers. A relic that wants "the player rolled a natural 7" almost always wants roll(), not rollTotal() — fumble keys off the natural 1 specifically, while crit/hit key off the total.
+3. Roll data is read-only by design. A mod cannot reroll, nudge, or veto a d20 — onRoll fires after mode and damage are already locked in. This keeps the entire roll pipeline (Loaded Die, Lucky Charm, Ring of Protection, Necromancer's nat-1-to-crit, Echo Chamber's mirrored no-fumble) under one single authority.
+
+api.state — persistent per-item storage:
+- get(default), set(value) — auto-namespaced to the calling item's own id. Values must be JSON-serializable.
+
+Mutators (side-effecting; most no-op during a preview/non-committing pass):
+- dealDamage(amt, {type, armorOnly}) — amt is dealt as-written, do not pre-double it (see section 5). type is one of arcane/martial/divine/shadow and drives vs-HP/vs-Armor/vs-Shield multipliers. Includes a corpse guard: hitting an already-dead enemy is a safe no-op rather than a crash.
+- heal(amt), gainArmor(amt) (returns actual armor gained), addGold(amt), spendGold(amt) (returns false if insufficient gold; routes through the same path as player purchases so Cursed Coin's accumulator still ticks)
+- addMult(amt), multiplyMult(x) — these write to the scoring scope, not directly to run state; they're the only mutators safe to call during a preview pass, which is the entire point of a live hand preview.
+- addMana(amt) — same scope-based pattern as addMult.
+- drawCards(n) — hard-capped at 20 per call regardless of argument, to guard against a runaway hook dealing thousands of cards.
+- toast(msg) — HTML-escaped automatically; a mod string can never inject markup.
+- sfx(name) — must be one of a fixed whitelist (relic, potion, coin, shieldbreak, hit, crit, win, dealHand, click, error); anything else is silently ignored, not an error.
+- upgradeHandType(key, {chips, mult}) — permanent hand-type upgrade, the same primitive behind all 12 base-game elixir potions.
+- addMaxHp(n), addHands(n), addDiscards(n), addTempMult(n)
+- grantRelic(), grantPotion() — grant a random item from the BASE game's pool only (deliberately excludes other mods' content, so one mod's behavior never depends on which other mods happen to be installed).
+- armEffect(opts), clearEffect() — see section 5.
+- setNullSigil(sigil), nullSigil(), setDemandSigil(sigil) — directly drive the same sigilsour/demand mechanics used by boss effects (section 2), so a "power up, but Arcane scores nothing" relic is two lines instead of reimplementing the nullification logic.
+- enchantCards(enchantment, which, n) — which is one of "random" (n random unenchanted cards), "played" (the cards currently being scored — only meaningful inside onScoreHand/onHandResolved), or a sigil name (every card of that school). Enchants follow a card's _srcUid back to its deck copy so the enchant survives a redraw.
+
+================================================================
+7. Code Rules & Restrictions
+================================================================
+
+- Loops banned: for, while, and do are all forbidden — see section 6.2 for why. Use map/filter/reduce/forEach/every/some instead.
+- Scope limits: see the full shadowed-name list in section 6.2. You cannot reference these globals, and you cannot declare a local variable using those names either.
+- Length limit: 4000 characters per hook snippet, hard cap.
+
+================================================================
+8. Rarity Tiers
+================================================================
+
+The full rarity ladder, low to high: common, uncommon, rare, epic, legendary, mythic. All six are valid on relics, potions, and heroes. Higher rarities appear less frequently in shops/rewards and should carry proportionally stronger effects — scarcity is meant to track effect strength, so a mythic doing common-tier work undercuts the game's drop-rate pacing.
+
+================================================================
+9. Core Keys — Full List
+================================================================
+
+Sigils / Damage Types
+arcane, martial, divine, shadow — both the four card "schools" and the four elemental damage types used in api.dealDamage's type option. Shield is weak to Arcane, armor is weak to Shadow, HP is weak to Martial.
+
+Attack Types
+bite, crush, dark, fire, ice, lightning, pierce, poison, psychic, slash — enemy attack flavors, independent of the sigil/damage-type system. Used for atk on enemies and for relic resistTypes/vsTypes matching.
+
+Enemy Effects
+See section 2 for full descriptions: numbed, vulnerable, relicjam, unsteady, potionseal, sigilsour, patternread, weakened, sigilread, noescape, demand, courtspurge.
+
+================================================================
+10. Common Pitfalls
+================================================================
+
+- Renaming an item id after release — corrupts any save that references it. Ship a new id instead.
+- Doubling dealDamage's input — api.dealDamage(n) already deals n. Doubling it yourself (a habit if you're referencing base-game potion code, which does its own internal doubling for a different reason) deals 2x the intended damage.
+- Reading roll()/rollTotal() from the wrong hook — inside onScoreHand or onHandResolved, these describe the PREVIOUS hand's roll, not the upcoming one, and are null on a battle's first hand. Only onRoll gives you the roll that just happened.
+- Skipping descT for numeric potion effects — the displayed number won't reflect Potion Potency, misleading the player about actual effect strength.
+- Forgetting echoCompatKeys on a hook relic you want mirrorable — Echo Chamber will silently be unable to target it; no error, it just won't appear as a mirror option.
+- Setting a hero-only field (section 4.2-4.4) on a RELIC instead of a hero's bonus — it validates cleanly (if the key also happens to be a relic field) or is rejected (if it's hero-only), but either way it will not do what you expect, since relics never populate run.clsBonus.
+- Trying to reproduce a genuinely hardcoded mechanic (section 4.6) via bonus fields — it isn't reachable through bonus at all for those specific heroes; use a starting relic with a hook instead.
+- Writing perks text that drifts from the actual bonus object — nothing auto-generates hero-select text from bonus fields, so these fall out of sync easily during iteration. Double-check after every balance pass.
+- Assuming rangerMultX / rangerNoMartialMul work on a custom hero — as of this pass, the fields validate and store correctly, but the engine code that applies them still checks for the literal Ranger hero id, so they currently have no effect on a modded hero (section 4.6).

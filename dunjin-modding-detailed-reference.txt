@@ -2,8 +2,6 @@ Dunjin Modding — Detailed Reference
 
 This is the expanded companion to the main modding guide. Where the main guide gives you the shortest path to a working mod, this document goes deep on every field, every validator rule, every API function, and every gotcha — for when you're building something more ambitious than a single relic.
 
-Everything in this document is verified against the actual mod-loading and validation code (loadWorkshopMods, validateModRelic, validateModClass, validateModPotion, validateModEnemy, buildModApi), not inferred or assumed.
-
 ================================================================
 1. Setup & File Structure
 ================================================================

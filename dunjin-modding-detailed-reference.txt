@@ -36,7 +36,7 @@ Enemies have an additional constraint beyond id: the display name (n field) must
 
 --- Error handling ---
 
-Bad items are rejected loudly, not silently dropped. Every validator function calls modError(label, message) with a specific, actionable reason (e.g. "bogpack_ward: rarity must be one of common|uncommon|rare|epic|legendary|mythic") rather than just skipping the item with no explanation. Check the mod error log (surfaced via the MODS panel) after every restart — a typo that used to fail silently in early mod-support builds now tells you exactly what's wrong.
+Bad items are rejected loudly, not silently dropped. Every validator function calls modError(label, message) with a specific, actionable reason (e.g. "bogpack_ward: rarity must be one of common|uncommon|rare|epic|legendary|mythic") rather than just skipping the item with no explanation. Check the mod error log (surfaced via the MODS panel) after every restart — a typo in a field name or an out-of-range value will show up there with the exact reason it failed.
 
 --- ID immutability ---
 
@@ -65,7 +65,7 @@ Enemies are pure data — no hooks, no code.
 
 --- Effects are available to every tier ---
 
-The engine never actually gated effects on e.boss — startCombat() reads def.effect unconditionally to seed demandSigil / sourSigil / jammedIds, and every consumer checks combat.enemy.effect==="...", regardless of tier. Only two UI display sites (the bestiary tooltip and the combat ability badge) used to gate on e.boss, and both have since been un-gated to match the engine's actual behavior — so a modded grunt carrying an effect will correctly announce it to the player in the UI too. Base-game enemies only use effects on bosses as a design convention, not because the engine requires it; your mod is free to put unsteady on a grunt.
+The engine doesn't gate effects on e.boss — startCombat() reads def.effect unconditionally to seed demandSigil / sourSigil / jammedIds, and every consumer checks combat.enemy.effect==="...", regardless of tier. The bestiary tooltip and the combat ability badge display effects the same way on every tier too, so a modded grunt carrying an effect will correctly announce it to the player in the UI. Base-game enemies only use effects on bosses as a design convention, not because the engine requires it; your mod is free to put unsteady on a grunt.
 
 --- Enemy Effects (full list) ---
 
@@ -111,7 +111,7 @@ Every school has both a Chips (Mana) field and a Mult field:
 - Shadow: shadowChips [-999, 999], shadowMult [-99, 99]
 - Martial: marChips [-999, 999], marMult [-99, 99]
 
-Example — Martial equivalent of Sage's Insight (previously there was no clean way to do this on relics; now it mirrors Arcane/Divine exactly):
+Example — Martial equivalent of Sage's Insight, mirroring the Arcane/Divine pattern exactly:
 
 {"relics":[{"id":"bogpack_warcry","name":"War Cry Standard","rarity":"uncommon","desc":"+1 Mult per Martial card scored.","marMult":1}]}
 
@@ -176,7 +176,9 @@ Heroes combine base run stats with a bonus object, which becomes run.clsBonus in
 - cost — optional. If set (0 to 9999), the hero is coin-purchasable instead of free-from-start; unlockDesc defaults to "Purchase for N coins" if not supplied (max 120 chars).
 - Mod heroes cannot use unlockReq (a JS predicate function) the way base-game heroes can — hooks are strings/sandboxed, and a predicate over the player's META save data would need a second sandbox entirely. Mod heroes are therefore either free-from-start or cost-gated; there's no "beat this boss to unlock" path available to mods.
 
---- 4.2 Hero-Only Fields (MOD_CLASS_NUM_FIELDS, with ranges) ---
+--- 4.2 Hero-Only Numeric Fields (MOD_CLASS_NUM_FIELDS, with ranges) ---
+
+Every hero-only mechanic in the base game — including roll behavior, crit multipliers, and damage-shape effects — has a field here that any custom hero can set. None of these are tied to a specific hero id; setting duelistCritX on a hero you invent works exactly the same as it does on Duelist.
 
 - startShield [0, 100] — flat starting shield, and also raises the run's max-shield tracking (relevant to Warden-style "healing restores shield" builds).
 - knightArmor [0, 50] — flat starting shield (Knight's field; functionally similar to startShield but does not touch max-shield tracking).
@@ -192,20 +194,32 @@ Heroes combine base run stats with a bonus object, which becomes run.clsBonus in
 - critLow [2, 20] — crit threshold; lower it to widen the crit window (default trigger is a natural 20).
 - glancePct [0, 1] — damage % dealt on a glancing blow (base default is 0.5).
 - bardLuck [-0.5, 0.5] — added chance on event/treasure/camp rolls; stacks additively with the relic field luckBonus.
-- rangerNoMartialMul [0, 5] — Mult multiplier when the hand contains no Martial cards. Note: this field's value is read generically, but the check of whether to apply it is still hardcoded to run.cls.id==="ranger" in two places (see section 4.4) — setting this on a non-Ranger custom hero currently has no effect.
+- rangerNoMartialMul [0, 5] — Mult multiplier when the hand contains no Martial cards. Both scoring paths (the live hand preview and the actual resolution) key off this field's presence, so any custom hero can take it.
 - goldPerWin [0, 50] — flat gold per battle won.
 - ratkingRelicMult [0, 2] — Mult per relic held.
+- duelistCritX [1, 5] — crit damage multiplier, replacing the default 2x. Duelist sets this to 2.5; any hero can now use a different value.
+- necroGlanceMult [0, 20] — Mult granted on the hand following a glancing blow. Duelist and Necromancer both key certain other mechanics off "did I just glance," but this specific bonus-mult payout is what Necromancer's bonus sets to 3.
+- tankEliteMulX [0, 5] — Mult multiplier applied when you attack a Vanguard or Elite enemy, and also the multiplier applied to your own outgoing damage on a one-shot kill against one. Tank sets this to 1.25.
+- tankGruntDmgMulX [0, 5] — multiplier applied to incoming damage from Grunt-tier enemies specifically (bosses, vanguards, and elites are unaffected). Tank sets this to 1.25 as its downside.
+- craftsmanRelicBoost [0, 1] — added chance weight toward relic drops from events/treasure/camp, and it also feeds the rarity-weighting roll used whenever a relic is picked (so a higher value skews rewards toward rarer relics too, not just more frequent ones). Craftsman sets this to 0.15.
+- craftsmanOneShotChance [0, 1] — chance of an extra bonus relic when your first hand of a battle kills a full-HP enemy outright. Craftsman sets this to 0.5.
+- fatespinnerCritRollGain [0, 5] — how much the natural-roll floor permanently increases per crit landed, up to the existing +5 cap. Fatespinner sets this to 1.
 
 --- 4.3 Hero-Only Flags (MOD_CLASS_FLAGS, true/false only) ---
 
 - wardenHeal — all healing also restores shield instead of just HP.
 - wardenArmorMult — +1 Mult per 25 shield currently held.
 - monkMultX — doubles (or 1.5x/2x depending on suit count) the monkMult bonus instead of adding it flatly.
-- graveBurial — the weakest unenchanted card is removed from the deck after every battle; +1 Mult per 2 cards missing from a full 52-card deck. (Gravekeeper's mechanic, now fully generic.)
-- twinSchoolDeck — the 52-card deck is restricted to two randomly-chosen schools at run start. (Twinsoul's mechanic, now fully generic.)
-- randomDeck — the 52-card deck is entirely randomized (any school, any rank, duplicates allowed). (Lottery Saint's mechanic, now fully generic.)
-- rangerMultX — doubles Mult on High Card/Pair hands. Note: like rangerNoMartialMul, the application of this flag's effect is still gated to run.cls.id==="ranger" in places — see section 4.4.
+- graveBurial — the weakest unenchanted card is removed from the deck after every battle; +1 Mult per 2 cards missing from a full 52-card deck. (Gravekeeper's mechanic.)
+- twinSchoolDeck — the 52-card deck is restricted to two randomly-chosen schools at run start. (Twinsoul's mechanic.)
+- randomDeck — the 52-card deck is entirely randomized (any school, any rank, duplicates allowed). (Lottery Saint's mechanic.)
+- rangerMultX — doubles Mult on High Card/Pair hands. Same as rangerNoMartialMul above: usable by any hero, not gated to a specific id.
 - noDiscards — converts what would be discards into extra attacks instead (Bombardier's mechanic).
+- duelistGlanceFumble — a natural 1 becomes a glancing blow instead of a fumble. Duelist sets this true.
+- necroRebornCrit — a natural 1 is instead treated as a natural 20 (a crit). Necromancer sets this true. Note this stacks oddly with duelistGlanceFumble if a hero somehow had both set — the nat-1 rewrite checks run in a fixed order, so test any hero that combines roll-altering flags.
+- ratkingCommonOnly — every relic offered, sold, or found while this hero is active is restricted to common rarity. Ratking sets this true.
+- fatespinnerRollDmg — multiplies all damage dealt by (natural roll ÷ 10), so a natural 20 deals double and a natural 4 deals well under normal. Fatespinner sets this true; pair carefully with anything that also floors or rerolls the natural die, since this reads the actual natural roll, not the post-modifier total.
+- startRandomCommonRelic — grants one random common-rarity relic at the start of the run, picked fresh (not from a fixed list). Ratking sets this true, which is how it gets its signature "random common relic" opener without you needing to enumerate every common relic id by hand in the hero's relics array.
 
 --- 4.4 String Fields (MOD_CLASS_STR_FIELDS) ---
 
@@ -219,21 +233,15 @@ A hero that leans into Shadow scoring with a mono-suit payoff and Warden-style a
 
 Note this combines both a relic-shared field (shadowChips/shadowMult, section 3.2) and hero-only fields (necroShadowMul/necroShadowMonoMul, knightArmor, section 4.2) in the same bonus object — both pools are usable together freely.
 
---- 4.6 What's STILL Not Exposed — Genuinely Hardcoded Mechanics ---
+A second example — a Duelist/Fatespinner hybrid that lives and dies by the die roll, combining fields from three different base heroes' signature mechanics:
 
-As of this pass, most hero mechanics have been generalized into the fields above. A smaller set remains hardcoded directly to a hero's id string and cannot currently be triggered by any bonus field on a modded hero, no matter what you set:
+{"heroes":[{"id":"bogpack_gambler","name":"Bog Gambler","rarity":"rare","desc":"Bets everything on the next roll.","blurb":"No half-measures, no safety net.","perks":"88 HP · A natural 1 becomes a glancing blow · Crits deal x3 instead of x2 · Damage scales with your natural roll ÷ 10","hp":88,"gold":0,"color":"#c96a3d","bonus":{"duelistGlanceFumble":true,"duelistCritX":3,"fatespinnerRollDmg":true},"relics":[],"potions":[]}]}
 
-- Duelist — a natural 1 becomes a glancing blow instead of a fumble; crits deal x2.5 instead of x2.
-- Necromancer — a natural 1 is reborn as a natural 20 (critical hit); +3 Mult on the next hand after a glancing blow.
-- Tank — x1.25 Mult against Vanguards and Elites; the reverse penalty against Grunts.
-- Craftsman — +15% relic drop rate, weighted toward higher rarities; 50% chance of a bonus relic on a one-shot kill.
-- Ratking — only common-rarity relics are ever offered, sold, or found.
-- Fatespinner — all damage is multiplied by (natural roll ÷ 10); each crit permanently raises the d20 by +1 (capped).
-- Bard — each discarded card grants +5 Mana to the next hand.
-- Broodmother — gains 2 potions after every battle won.
-- Ranger — rangerNoMartialMul and rangerMultX exist as generic fields you can set on a custom hero's bonus, but the code path that actually applies them still checks run.cls.id==="ranger" in the scoring functions — so setting these fields on a non-Ranger custom hero currently has no visible effect. Will be fixed later.
+There's no rule against combining fields associated with different base heroes on one custom hero — duelistCritX and fatespinnerRollDmg coexist here without conflict.
 
-If your custom hero concept needs a mechanic from the first list above, the correct approach is not to try to reproduce it via bonus fields — build it as a hook-driven relic instead (section 3.3) and bundle that relic into the hero's starting relics array. This is exactly how the base game gives some heroes their signature item (Knight starts with Paladin's Oath, Warden starts with Pilgrim's Pouch) — a starting relic is the standard extension point for a hero mechanic that goes beyond stat fields.
+--- 4.6 When a Bonus Field Isn't Enough ---
+
+Sections 4.2 through 4.4 cover every hero-only mechanic present in the base game. If your custom hero concept needs something beyond that — a genuinely novel trigger condition, not just a different number plugged into an existing pattern — the right extension point is a hook-driven relic (section 3.3) bundled into the hero's starting relics array. This is how the base game gives some heroes their signature item (Knight starts with Paladin's Oath, Warden starts with Pilgrim's Pouch): a starting relic can express logic that a flat stat field can't.
 
 ================================================================
 5. Potions
@@ -381,6 +389,5 @@ See section 2 for full descriptions: numbed, vulnerable, relicjam, unsteady, pot
 - Skipping descT for numeric potion effects — the displayed number won't reflect Potion Potency, misleading the player about actual effect strength.
 - Forgetting echoCompatKeys on a hook relic you want mirrorable — Echo Chamber will silently be unable to target it; no error, it just won't appear as a mirror option.
 - Setting a hero-only field (section 4.2-4.4) on a RELIC instead of a hero's bonus — it validates cleanly (if the key also happens to be a relic field) or is rejected (if it's hero-only), but either way it will not do what you expect, since relics never populate run.clsBonus.
-- Trying to reproduce a genuinely hardcoded mechanic (section 4.6) via bonus fields — it isn't reachable through bonus at all for those specific heroes; use a starting relic with a hook instead.
 - Writing perks text that drifts from the actual bonus object — nothing auto-generates hero-select text from bonus fields, so these fall out of sync easily during iteration. Double-check after every balance pass.
-- Assuming rangerMultX / rangerNoMartialMul work on a custom hero — as of this pass, the fields validate and store correctly, but the engine code that applies them still checks for the literal Ranger hero id, so they currently have no effect on a modded hero (section 4.6).
+- Assuming a hero-only field (section 4.2/4.3) only works on the base-game hero it's named after — it doesn't. rangerMultX, duelistCritX, necroGlanceMult, and every other field in those sections apply on any hero id, base-game or modded.

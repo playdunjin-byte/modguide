@@ -154,7 +154,7 @@ A relic needs at least one hook or one recognized field — an empty relic is re
 | `multX` | 0 to 10 | Mult multiplier, applied after flat mult |
 | `multPerCard` | −20 to 20 | Mult per card in the played hand |
 | `combo` | any `HAND_TYPES` key, or `any` | Bonus when that hand type is played. Requires at least one of `chips`/`mult`/`multX` also set. |
-| `handSize`, `discards`, `hands` | −3 to 3, −3 to 3, −2 to 2 | Run-wide resource caps |
+| `handSize`, `discards`, `hands` | −10 to 10 each | Run-wide resource modifiers. Floors: hand size 1, attacks (`hands`) 1, discards 0. Negative `hands`/`discards` apply at battle start only — picking up a relic with a negative value mid-combat has no effect on that battle. Negative `handSize` takes effect as you play cards down. |
 
 **Per-sigil scoring** — all four schools are symmetric; each has both a Chips and a Mult field:
 

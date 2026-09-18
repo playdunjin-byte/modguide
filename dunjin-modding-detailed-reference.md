@@ -17,13 +17,27 @@ Mods add enemies, relics, potions, and heroes to Dunjin via Steam Workshop. This
 
 ## 1. Setup & File Structure
 
-Mods are Steam Workshop items — not manually-uploaded folders.
+Mods are Steam Workshop items — not manually-uploaded folders on disk that the game reads directly. You can both consume and publish them without leaving the game.
+
+### Installing a mod
 
 1. **Enable mods**: Settings → Advanced → Enable Mods. Stored as `META.modsEnabled`; takes effect after a restart.
-2. **Subscribe** to a mod on the Steam Workshop.
+2. **Subscribe** to a mod, either on the Steam Workshop website or from the **Browse** tab of the in-game MODS panel (searchable, paginated, with a subscribe/unsubscribe toggle per item — no need to leave the game).
 3. **Restart the game.** On boot, if mods are enabled, the game calls a Steam bridge (`window.dunjinDesktop.steam.getWorkshopModsSync`) to read all subscribed Workshop items.
-4. The **MODS** button on the title screen lets you enable/disable individual mods and view load errors.
+4. The **MODS** button on the title screen opens a panel with three tabs: **Installed** (enable/disable individual mods, view load errors), **Browse** (search and subscribe to Workshop items in-game), and **Upload** (publish your own mod — see below).
 5. If mods are enabled but no Steam bridge is present (e.g. a browser build), mod loading is silently skipped — no error, just no mods.
+
+### Publishing a mod (Upload tab)
+
+Mod authors don't need any external tooling — the Upload tab drives Steam Workshop publishing directly:
+
+1. **Pick your mod folder** — a local folder containing `manifest.json` and your content JSON files. The game reads the manifest immediately and pre-fills the title field from `manifest.name` if you haven't typed one yet.
+2. **Pick a preview image** — Steam requires one; publishing is blocked without it.
+3. Fill in **title** (required), **description**, and a **change note** (defaults to "Updated" if left blank).
+4. Choose **visibility**: Private, Unlisted, Friends only, or Public.
+5. Click publish. Progress is reported live (preparing → uploading files → uploading preview → finishing). Publishing again with the same folder updates the existing Workshop item (its id is remembered) rather than creating a new one.
+
+If your Steam account hasn't accepted the Workshop legal agreement yet, the upload either completes with a warning or is blocked outright until you accept it.
 
 ### Mod folder contents
 
@@ -59,6 +73,8 @@ Every content item's `id` must:
 ### Error handling
 
 Bad items are rejected loudly, never silently dropped. Each rejection logs a specific reason (e.g. `bogpack_ward: rarity must be one of common|uncommon|rare|epic|legendary|mythic`) to the mod error log, viewable from the MODS panel after a restart. A malformed JSON file is reported per-file and skipped; other files in the same mod still load.
+
+For a full picture during development, open the browser devtools console and run `dunjinMods()`. It prints a complete load report: Steam bridge connection status, every loaded mod with its version/author/item count, how many heroes/relics/potions/enemies were merged into the live pools, and every logged error in one place — faster than digging through the MODS panel one mod at a time.
 
 ### ID immutability
 
@@ -118,6 +134,8 @@ The engine does not gate effects on boss status — it reads `effect` unconditio
 Relics come in two flavors: **stat-only** (pure JSON) and **hook-driven** (JavaScript). Prefer stat-only whenever the effect fits — it's less error-prone and gets Echo Chamber mirroring and Relic Jam suppression for free, since the engine's relic-summing logic already walks every relic (mod or base-game) and its Echo Chamber mirror the same way.
 
 A relic needs at least one hook or one recognized field — an empty relic is rejected. Unknown fields are rejected loudly, never dropped silently.
+
+`rarity` alone drives shop price, sell value, and the item's color/border everywhere it's displayed — the same lookup table base-game relics use. There's no separate price or sell-value field to set; picking the right rarity string is all that's needed.
 
 ### 3.1 Stat-only example
 
@@ -194,6 +212,8 @@ A relic needs at least one hook or one recognized field — an empty relic is re
 | `healAfterPct` | 0 to 0.5 | % max-HP heal after battle win |
 
 Reserved keys that are never validated as stat fields (used for other purposes): `id, name, rarity, desc, descT, svg, hooks, echoCompatKeys, echoIncompatible, combo, vsTypes, vsTier, resistTypes`.
+
+`descT` is optional on relics, same as on potions — a secondary description line base-game items use for a dynamic/numeric variant of the flavor text (e.g. showing the live rolled value of an effect). It's accepted and stored but not required.
 
 ### 3.3 Hooks on relics
 

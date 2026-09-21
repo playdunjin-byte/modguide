@@ -289,6 +289,7 @@ Heroes may also declare `hooks`, using the same mechanism as relics.
 | `relics`, `potions` | Arrays of starting item ids, max 3 entries each. Must be base-game ids or ids belonging to this same mod — a hero can't depend on another mod's content. |
 | `cost` | Optional, 0–9999. If set, the hero is coin-purchasable instead of free-from-start. `unlockDesc` defaults to "Purchase for N coins" (max 120 chars) if not supplied. |
 | `difficulty` | Optional, 1–5. Star rating on hero-select. Unrelated to the run's overall difficulty setting. |
+| `mimic` | Optional. Offers this hero's perks as Mimic major/minor draw candidates. See [5.6](#56-mimic-compatibility-major--minor-perks). |
 
 Mod heroes cannot use a JS-predicate `unlockReq` the way base-game heroes can (hooks are sandboxed strings; a predicate over save data would need a second sandbox). A mod hero is therefore either free-from-start or cost-gated — no "beat this boss to unlock" path is available to mods. Omitting both `cost` and `unlockReq` defaults to unlocked.
 
@@ -362,6 +363,51 @@ Every hero-only mechanic in the base game has a field here that any custom hero 
 ### 5.5 Hero-only string field
 
 `potionPotencyMaxRarity` (one of the six rarities) — caps which potion rarities benefit from this hero's `potionPotency` bonus; any potion above the given rarity gets none of it.
+
+### 5.6 Mimic compatibility (major / minor perks)
+
+The Mimic is a base-game hero whose entire kit is randomized: at run start it rolls one **major** perk and one **minor** perk, each borrowed wholesale from a different hero, and plays the run with that combined bonus. This is driven by a lookup table of hand-authored major/minor perks — one per base-game hero, whichever ones that hero's designer chose to offer.
+
+Mod heroes are not added to this table automatically. By default, a mod hero can be picked, played, and fought entirely normally — it simply never comes up as something the Mimic can borrow from. Declaring the optional `mimic` field opts a mod hero into that draw pool.
+
+```json
+{"heroes":[{
+  "id":"bogpack_ward","name":"Marsh Warden","rarity":"rare","desc":"Marsh hero.",
+  "blurb":"Keeper of the bog.","perks":"110 HP · +1 Mult per Arcane card scored",
+  "hp":110,"bonus":{"arcMult":1},
+  "mimic":{
+    "major":{"desc":"Bog Ward: +25% resist to Poison damage, permanently","bonus":{"resistTypes":["poison"],"resistPct":0.25}},
+    "minor":{"desc":"+1 relic slot","bonus":{"maxRelicsBonus":1}}
+  }
+}]}
+```
+
+| Field | Notes |
+|---|---|
+| `mimic` | Optional object. Omit entirely if this hero should never be offered to the Mimic — there's no minimum, and most mod heroes can simply skip it. |
+| `mimic.major` | Optional. A single perk object: `{desc, bonus, relics?}` (see below). |
+| `mimic.minor` | Optional. Either a single perk object, or an **array** of perk objects for a hero with more than one minor variant (the base game does this for Broodmother and Rat King — each entry becomes its own equal-odds draw, distinct from that hero's other minor(s)). Max 4 entries if an array. |
+
+At least one of `major`/`minor` is required if `mimic` is present at all — an empty `mimic: {}` is rejected the same way an empty relic is. A hero can offer just a major, just a minor, or both, exactly like base-game heroes (Highroller, for instance, only offers a major).
+
+**Perk object fields** (used identically for `major`, and for each entry under `minor`):
+
+| Field | Notes |
+|---|---|
+| `desc` | Required, max 150 chars. Shown to the player as the rolled Mimic's perk description — keep it as terse as the base game's own entries (e.g. *"+1 Mult per Martial card scored"*). |
+| `bonus` | Required, at least one field. Validated exactly like the hero's own top-level `bonus` field (section 5) — any relic-shared field from [3.2](#32-stat-fields), or any hero-only numeric/flag/string field from [5.2](#52-hero-only-numeric-fields)–[5.5](#55-hero-only-string-field). |
+| `relics` | Optional. Array of starting item ids (max 3), granted only when this specific perk is the one rolled. Same rule as the hero's own `relics`/`potions`: must be base-game ids or ids belonging to this same mod. |
+
+**How the draw works, and what modders should know:**
+
+- A Mimic run rolls exactly one major (from every hero — base-game or modded — that has declared one) and one minor (same pool, excluding whichever hero supplied the major), each with equal odds among eligible entries. Your hero's major and minor are independent draws and can end up combined with perks from two different other heroes, or with each other, or not picked at all in a given run.
+- The Mimic's own bonus is the sum of the rolled major's `bonus` and the rolled minor's `bonus` — not your hero's regular top-level `bonus`, which is never used by the Mimic. Design major/minor as self-contained bonuses, not as references to the rest of the hero's kit.
+- `relics`/`potions` under `mimic.major` or `mimic.minor` are a separate grant from the hero's own top-level `relics`/`potions` — the Mimic never receives your hero's own starting items, only whatever the specific rolled perk(s) specify.
+- Because `bonus` reuses the full hero-only field set, it's technically possible to put a whole-kit flag like `randomDeck`, `twinSchoolDeck`, `templarPlasma`, or `startRandomCommonRelic` on a *minor* perk. Nothing stops this validation-wise, but several of these were designed as one hero's entire identity (or, like `startRandomCommonRelic`, interact with a different part of the engine than the normal relic grant) and may combine strangely when layered under an unrelated major. Treat those flags as major-perk material, and stick to additive numeric/flag fields for minors, unless you've specifically tested the combination.
+- As with any hero content, `mimic` perk ids aren't a thing on their own — the whole `mimic` block lives inside your hero's entry and is validated when that hero loads. There's no separate namespacing step; a bad `mimic` block simply fails your hero the same way a bad `bonus` or `hooks` block would (see [Error handling](#error-handling)), with the specific field named in the mod error log.
+- Design intent, not an engine restriction, decides how "on-theme" the perks are — the Mimic doesn't care whether a major/minor makes narrative sense with the donor hero's kit, same as it doesn't for base-game heroes.
+
+If a save's rolled major/minor donor is later removed (mod disabled/uninstalled), that slot's bonus just stops applying on reload — same missing-mod toast/log as a dropped relic or potion, not a crash.
 
 ---
 

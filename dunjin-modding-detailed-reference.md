@@ -133,7 +133,7 @@ The engine does not gate effects on boss status — it reads `effect` unconditio
 
 Relics come in two flavors: **stat-only** (pure JSON) and **hook-driven** (JavaScript). Prefer stat-only whenever the effect fits — it's less error-prone and gets Echo Chamber mirroring and Relic Jam suppression for free, since the engine's relic-summing logic already walks every relic (mod or base-game) and its Echo Chamber mirror the same way.
 
-A relic needs at least one hook or one recognized field — an empty relic is rejected. Unknown fields are rejected loudly, never dropped silently.
+A relic needs at least one hook or one recognized field — an empty relic is rejected. Unknown fields are rejected loudly, never dropped silently. This includes the hero-only fields in sections 5.2–5.5: they are not recognized on relics and fail validation as unknown fields.
 
 `rarity` alone drives shop price, sell value, and the item's color/border everywhere it's displayed — the same lookup table base-game relics use. There's no separate price or sell-value field to set; picking the right rarity string is all that's needed.
 
@@ -175,8 +175,8 @@ A relic needs at least one hook or one recognized field — an empty relic is re
 |---|---|---|
 | `faceChips` | −999 to 999 | Per face card (J/Q/K) scored |
 | `faceMult` | −99 to 99 | Per face card scored |
-| `oddChips` | −999 to 999 | Per odd-rank card scored |
-| `monkMult` | −99 to 99 | Mult when 3+ distinct suits are played in one hand |
+| `oddChips` | −999 to 999 | Per odd-rank card scored (3, 5, 7, 9, A) |
+| `monkMult` | −99 to 99 | Flat Mult when 3+ distinct suits are played in one hand. On a hero with the `monkMultX` flag this flat bonus is replaced — see `monkMultX` in 5.3. |
 | `rarityBoost` | 0 to 3 | Added weight toward rarer relics whenever a relic is offered (shop, event, treasure, camp). Stacks with the hero field `craftsmanRelicBoost`. |
 | `curatorSlots` | 0 to 5 | Extra curator-style relic slots in the shop |
 
@@ -184,7 +184,7 @@ A relic needs at least one hook or one recognized field — an empty relic is re
 
 | Field | Range | Notes |
 |---|---|---|
-| `armor` | 0 to 200 | Flat armor granted |
+| `armor` | 0 to 200 | Flat damage reduction per hit taken |
 | `roll` | −5 to 5 | Flat bonus to every d20 roll |
 | `rollFloor` | 0 to 20 | Minimum on rolled results |
 | `critWiden` | 0 to 5 | Lowers the natural roll needed to crit |
@@ -268,10 +268,12 @@ Inside `use`, `ctx.potencyMult` reflects the game's potion-potency scaling (incl
 Heroes combine base run stats with a `bonus` object (internally `run.clsBonus`). Fields in `bonus` draw from three pools:
 
 1. **Relic-shared fields** — anything from [section 3.2](#32-stat-fields) works identically here.
-2. **Hero-only numeric/flag/string fields** — read directly off `run.clsBonus` by dedicated engine checks, and never flow through the general relic-summing logic. (Setting one of these on a *relic* validates fine but silently does nothing — relics never populate `run.clsBonus`.)
-3. **Hero-only array field** (`relicSpawnGate`) — same non-relic-summed rule, validated as a list of rarity strings.
+2. **Hero-only numeric/flag/string fields** — read directly off `run.clsBonus` by dedicated engine checks, and never flow through the general relic-summing logic. These are only accepted on heroes (and Mimic perks); on a relic they are rejected as unknown fields.
+3. **Hero-only array field** (`relicSpawnGate`) — same rule, validated as a list of rarity strings.
 
 Heroes may also declare `hooks`, using the same mechanism as relics.
+
+**Every base-game hero perk is reproducible.** No hero mechanic is gated on a base hero's id — every one is driven purely by `bonus` fields, so a mod hero that sets the same fields gets the same behavior (and the same in-run Mana/Mult breakdown rows, labelled with your hero's name). Section 5.7 lists the exact `bonus` for every base hero's major and minor perk.
 
 ```json
 {"heroes":[{"id":"bogpack_ranger","name":"Bog Ranger","rarity":"rare","desc":"Marsh hero.","blurb":"Patient tracker.","perks":"100 HP · +1 hand size · +1 Mult per Arcane card scored","hp":100,"gold":25,"color":"#7cbf57","bonus":{"handSize":1,"arcMult":1},"relics":["oath"],"potions":["heal"]}]}
@@ -295,70 +297,107 @@ Mod heroes cannot use a JS-predicate `unlockReq` the way base-game heroes can (h
 
 ### 5.2 Hero-only numeric fields
 
-Every hero-only mechanic in the base game has a field here that any custom hero can set — none are tied to a specific base hero id.
+A value of `0` is normally treated as "not set" and dropped. The two **override** fields (`monkChips`, `graveDeckMult`) are the exception: an explicit `0` is kept, which is how you switch off the default value their paired flag would otherwise supply.
+
+**Defense & capacity**
 
 | Field | Range | Notes |
 |---|---|---|
-| `startShield` | 0–100 | Flat starting shield; also raises max-shield tracking |
-| `knightArmor` | 0–50 | Flat starting shield; functionally similar to `startShield` but doesn't touch max-shield tracking |
-| `faceMultX` | 0–3 | Mult multiplier per face card scored |
-| `allOddMult` | −10 to 10 | Bonus Mult if every card in the hand is odd-ranked |
-| `allEvenMultX` | 0–5 | Mult multiplier if every card in the hand is even-ranked |
+| `startShield` | 0–100 | Starting armor; also raises peak-armor tracking (what `wardenHeal` restores up to) |
+| `knightArmor` | 0–50 | Starting armor that doesn't touch peak-armor tracking |
+| `maxPotions`, `maxRelicsBonus` | −3 to 6 each | Potion/relic slot adjustments from the base 6 |
+| `tankGruntDmgMulX` | 0–5 | Multiplier on incoming damage from Grunt-tier enemies only |
+
+**Scoring**
+
+| Field | Range | Notes |
+|---|---|---|
+| `faceMultX` | 0–3 | Mult × (1 + value × face cards scored), **and +1 gold per face card scored**. Nullified faces (Court's Purge, soured/read sigils) don't count. |
+| `allOddMult` | −10 to 10 | Flat Mult if every played card is odd-ranked |
+| `allEvenMultX` | 0–5 | Mult multiplier if every played card is even-ranked |
 | `arcSuitMul` / `arcSuitMonoMul` | 0–5 each | Mult multiplier when the hand's dominant perk suit is Arcane / when the hand is Arcane-only |
 | `divSuitMul` / `divSuitMonoMul` | 0–5 each | Same pattern, Divine |
 | `shadowSuitMul` / `shadowSuitMonoMul` | 0–5 each | Same pattern, Shadow |
 | `marSuitMul` / `marSuitMonoMul` | 0–5 each | Same pattern, Martial |
-| `bruteRageX` | 0–1 | Mult multiplier per hit taken this battle, stacking as the fight goes on |
-| `maxPotions`, `maxRelicsBonus` | −3 to 6 each | Capacity adjustments |
-| `critLow` | 2–20 | Crit threshold — lower widens the crit window (default trigger is a natural 20) |
-| `glancePct` | 0–1 | Damage % dealt on a glancing blow (base default 0.5) |
-| `bardLuck` | −0.5 to 0.5 | Added chance on event/treasure/camp rolls; stacks additively with relic field `luckBonus` |
-| `goldInterestPct` | 0–1 | After a battle win, adds this % of current gold as bonus interest on top of the normal reward |
+| `twinsoulMonoMana` | 0–100 | Flat Mana on mono-sigil hands (every card the same sigil) |
+| `rangerMissingCardMult` | 0–5 | Mult per card the played hand is short of 5 (a 1-card hand gets ×4 of this) |
 | `ratkingRelicMult` | 0–2 | Mult per relic held |
+| `monkChips` | 0–100 | **Override.** Flat Mana when a hand contains 3+ distinct suits. Works standalone, or overrides the implicit +25 that `monkMultX` supplies (set `0` to remove it). |
+| `graveDeckMult` | 0–2 | **Override.** Mult per card your deck is below 52. Works standalone (pair with any deck-thinning), or overrides the implicit +0.25 that `graveBurial` supplies (set `0` to remove it). |
+| `bruteRageX` | 0–1 | Mult × (1 + value × hits taken this battle) |
+| `tankEliteMulX` | 0–5 | Mult multiplier vs Vanguards/Elites; also multiplies your damage on a one-shot kill against one |
+| `bardDiscardMana` | 0–50 | Flat Mana added to your next hand per card discarded this turn |
+| `broodmotherPotionMana` | 0–10 | Each potion consumed permanently adds this much flat Mana to every hand |
+| `monkMultXFactor4` | 1–5 | Pairs with `monkMultX` — the multiplier at 4 distinct suits (default 2) |
+| `rangerMultXFactor` | 1–5 | Pairs with `rangerMultX` — the multiplier on High Card/Pair (default 2) |
+| `wardenArmorMultDivisor` | 1–100 | Pairs with `wardenArmorMult` (default 25) |
+
+**Rolls & crits**
+
+| Field | Range | Notes |
+|---|---|---|
+| `critLow` | 2–20 | Crit threshold — lower widens the crit window (default natural 20) |
+| `glancePct` | 0–1 | Damage % dealt on a glancing blow (default 0.5) |
 | `duelistCritX` | 1–5 | Crit damage multiplier, replacing the default 2× |
-| `duelistCritWiden` | 0–5 | Lowers the natural roll needed to crit — a hero-only bonus-field equivalent of the relic field `critWiden` |
-| `necroGlanceMult` | 0–20 | Mult granted on the hand following a glancing blow |
-| `tankEliteMulX` | 0–5 | Mult multiplier when attacking a Vanguard or Elite enemy; also multiplies your own damage on a one-shot kill against one |
-| `tankGruntDmgMulX` | 0–5 | Multiplier on incoming damage from Grunt-tier enemies specifically (bosses/vanguards/elites unaffected) |
-| `craftsmanRelicBoost` | 0–1 | Added chance weight toward relic drops from events/treasure/camp, and feeds the rarity-weighting roll on any relic pick. Stacks additively with relic field `rarityBoost`. |
-| `craftsmanOneShotChance` | 0–1 | Chance of an extra bonus relic when your first hand of a battle kills a full-HP enemy outright |
-| `fatespinnerCritRollGain` | 0–5 | How much the natural-roll floor permanently increases per crit landed, up to the existing +5 cap |
-| `bardDiscardMana` | 0–50 | Flat bonus Mana added to your *next* hand for every card discarded this turn |
-| `broodmotherPostBattlePotions` | 0–10 | Grants N potions after every battle win (converted to gold if the potion belt is full) |
-| `broodmotherPotionMana` | 0–10 | Every potion consumed permanently adds this much flat Mana to every hand for the rest of the run |
-| `wardenArmorMultDivisor` | 1–100 | Pairs with the `wardenArmorMult` flag (default divisor 25 if that flag is set without this) |
-| `graveBurialDivisor` | 1–52 | **Validated but not currently read by any scoring code.** `graveBurial`'s bonus is hardcoded at +0.25 Mult per missing card; this field has no observable effect. Treat as reserved. |
-| `monkMultXFactor` | 1–5 | **Validated but not currently read anywhere.** The 3-distinct-suit case of `monkMultX` does not multiply by this field — see `monkMultX` below. Treat as reserved. |
-| `monkMultXFactor4` | 1–5 | Pairs with `monkMultX` — the multiplier applied at 4+ distinct suits (default 2 if omitted). This is the field `monkMultX` actually reads. |
-| `rangerMultXFactor` | 1–5 | Pairs with `rangerMultX` — the multiplier applied on High Card/Pair hands (default 2 if omitted) |
-| `clericHealMult` | 0–5 | Every time the player absorbs `clericHealMultPer` HP of actual healing (overheal at full HP doesn't count; the remainder banks between heals), grants this much permanent Mult |
-| `clericHealMultPer` | 5–200 | HP-healed threshold that triggers `clericHealMult` (default 50 if `clericHealMult` is set without it) |
+| `duelistCritWiden` | 0–5 | Lowers the natural roll needed to crit (hero-only equivalent of relic `critWiden`) |
+| `duelistRiposteMult` | 0–5 | Permanent Mult gained every time you land a crit |
+| `necroGlanceMult` | 0–20 | Mult stored by a glancing blow, spent on your next full hit or crit |
+| `fatespinnerCritRollGain` | 0–5 | Permanent d20 bonus gained per crit, up to +5 total; at +5 you become fumble-immune |
+
+**Healing**
+
+| Field | Range | Notes |
+|---|---|---|
+| `clericHealMult` | 0–5 | Permanent Mult gained per `clericHealMultPer` HP of actual healing (overheal doesn't count; the remainder banks between heals) |
+| `clericHealMultPer` | 5–200 | Threshold for `clericHealMult` (default 50) |
+
+**Economy & loot**
+
+| Field | Range | Notes |
+|---|---|---|
+| `bardLuck` | −0.5 to 0.5 | Added chance on event/treasure/camp rolls; stacks with relic `luckBonus` |
+| `goldInterestPct` | 0–1 | After a battle win, adds this % of current gold as interest |
+| `freeRerolls` | 0–5 | Free shop rerolls per shop visit |
+| `craftsmanRelicBoost` | 0–1 | Added chance toward relic drops from events/treasure/camp, and feeds rarity weighting on any relic pick. Stacks with relic `rarityBoost`. |
+| `craftsmanOneShotChance` | 0–1 | Chance of a bonus relic when your first hand kills a full-HP enemy |
+| `broodmotherPostBattlePotions` | 0–10 | Potions granted after every battle win (gold if the belt is full) |
+
+**Deprecated (validated for backward compatibility, no effect)**
+
+| Field | Range | Notes |
+|---|---|---|
+| `graveBurialDivisor` | 1–52 | Never read. Use `graveDeckMult` to change Gravekeeper's per-card rate. |
+| `monkMultXFactor` | 1–5 | Never read. Use `monkChips` (3+ suits) and `monkMultXFactor4` (4 suits). |
 
 ### 5.3 Hero-only flags (true/false only)
 
 | Flag | Effect |
 |---|---|
-| `wardenHeal` | All healing also restores shield instead of just HP |
-| `wardenArmorMult` | +1 Mult per 25 shield currently held. The 25 is adjustable via `wardenArmorMultDivisor` |
-| `monkMultX` | Changes how `monkMult` behaves by distinct suits played, **asymmetrically at 3 vs. 4 suits**: at exactly 3 distinct suits, grants a flat **+25 Mana** bonus — independent of the `monkMult` stat value and not adjustable by `monkMultXFactor` despite it being a validated field; at 4+ distinct suits, multiplies Mult by `monkMultXFactor4` instead (default 2). Without this flag, `monkMult`'s bonus is instead added flatly at 3+ suits as an ordinary stat field. |
-| `graveBurial` | The weakest unenchanted card is removed from the deck after every battle; **+0.25 Mult per card missing from a full 52-card deck, fixed.** `graveBurialDivisor` is validated but does not adjust this rate (see above); card removal itself is not adjustable by any field. |
-| `twinSchoolDeck` | The 52-card deck is restricted to two randomly-chosen schools at run start |
-| `randomDeck` | The 52-card deck is entirely randomized (any school, any rank, duplicates allowed) |
-| `rangerMultX` | Doubles Mult on High Card/Pair hands. Multiplier adjustable via `rangerMultXFactor`. |
-| `noDiscards` | Converts what would be discards into extra attacks instead |
+| `knightValor` | +2 Mult on every hand while at or above 50% HP; +10 Mana instead while below 50% |
+| `wardenHeal` | Healing can also restore armor, up to your peak armor this run |
+| `wardenArmorMult` | +1 Mult per 25 armor held (divisor via `wardenArmorMultDivisor`) |
+| `monkMultX` | Monk's suit engine. At 3+ distinct suits: flat Mana equal to `monkChips` (implicitly **+25** if `monkChips` isn't set). At 4 distinct suits: Mult × `monkMultXFactor4` (default 2) — **this multiplier only fires if you also have a non-zero `monkMult` from somewhere** (Monk sets `monkMult: 1` for exactly this reason). With the flag set, `monkMult`'s flat bonus is no longer added. |
+| `graveBurial` | After every battle, the weakest unenchanted card is removed from the deck. Also supplies an implicit **+0.25 Mult per card below 52** unless `graveDeckMult` is set. |
+| `twinSchoolDeck` | The deck is built from two randomly-chosen schools at run start |
+| `randomDeck` | The deck is fully randomized (any school, any rank, duplicates allowed) |
+| `rangerMultX` | Mult × `rangerMultXFactor` (default 2) on High Card/Pair hands |
+| `noDiscards` | 0 discards; any bonus discards from other sources become extra attacks instead |
 | `duelistGlanceFumble` | A natural 1 becomes a glancing blow instead of a fumble |
-| `necroRebornCrit` | A natural 1 is instead treated as a natural 20 (a crit). Stacks oddly with `duelistGlanceFumble` if both are set on one hero — the nat-1 rewrite checks run in a fixed order, so test any hero combining roll-altering flags. |
-| `ratkingCommonOnly` | Every relic offered, sold, or found while this hero is active is restricted to common rarity. Predates and is narrower than `relicSpawnGate` (section 5.4), which can express the same restriction plus any other rarity subset — prefer `relicSpawnGate` for new heroes. |
-| `fatespinnerRollDmg` | Multiplies all damage dealt by (natural roll ÷ 10) — a natural 20 deals double, a natural 4 deals well under normal. Pair carefully with anything that also floors or rerolls the natural die. |
-| `startRandomCommonRelic` | Grants one random common-rarity relic at run start, bypassing `relicSpawnGate` entirely — this is a one-time grant, not a spawn-pool restriction |
-| `templarPlasma` | A substantial, high-risk scoring rewrite: replaces `chips × mult` scoring with `((chips + mult) / 2)²`; as a tradeoff, triples enemy HP scaling and triples flee-damage scaling |
+| `necroRebornCrit` | A natural 1 is instead treated as a crit. Nat-1 rewrites run in a fixed order, so test any hero combining this with `duelistGlanceFumble`. |
+| `ratkingCommonOnly` | Every relic offered, sold, or found is restricted to common rarity. Narrower predecessor of `relicSpawnGate` (5.4) — prefer that for new heroes. |
+| `fatespinnerRollDmg` | Clean hits deal damage × (natural roll ÷ 10) |
+| `templarPlasma` | Replaces `chips × mult` with `((chips + mult) / 2)²`; triples enemy HP/defense scaling and flee-damage scaling |
+| `templarReactor` | Overkill damage on any killing blow is banked as Mana (overkill ÷ ~67, or ÷ 200 with `templarPlasma`), capped at **+50**. The whole bank is released on your first scoring hand against an Elite or Boss. |
+| `bruteIntimidate` | Each time an enemy attacks you, its ATK drops by 1 for the rest of the battle (minimum 0) |
+| `startRandomRelic` | One random **common or uncommon** relic at run start (rarity-weighted). Respects `relicSpawnGate`/`ratkingCommonOnly` and skips relics you already hold. |
+| `startRandomCommonRelic` | One random **common** relic at run start. Bypasses `relicSpawnGate` (skips archived, non-spawnable and already-held relics). If both relic flags are set, this one wins. |
 
 ### 5.4 Hero-only array field
 
 `relicSpawnGate` (array of rarity strings, e.g. `["epic","legendary"]`) — restricts which relic rarities this hero can find, from every source that draws from the relic pool (shop, event rewards, treasure, camp). The engine's single relic-spawn choke point checks this field, so declaring it covers every source automatically.
 
 - Must be a non-empty array; each entry one of the six rarities. Unrecognized entries are rejected; duplicates are silently deduped.
-- Does not affect relics granted outside the normal spawn pool — `startRandomCommonRelic` and Ratking's tribute-event relic grant both bypass the spawn gate and hand out a specifically common relic regardless of this field.
+- `startRandomRelic` goes through the spawn gate; `startRandomCommonRelic` and Rat King's tribute-event relic grant bypass it and always hand out a common relic.
 
 ### 5.5 Hero-only string field
 
@@ -366,9 +405,9 @@ Every hero-only mechanic in the base game has a field here that any custom hero 
 
 ### 5.6 Mimic compatibility (major / minor perks)
 
-The Mimic is a base-game hero whose entire kit is randomized: at run start it rolls one **major** perk and one **minor** perk, each borrowed wholesale from a different hero, and plays the run with that combined bonus. This is driven by a lookup table of hand-authored major/minor perks — one per base-game hero, whichever ones that hero's designer chose to offer.
+The Mimic is a base-game hero whose entire kit is randomized: at run start it rolls one **major** perk and one **minor** perk, each borrowed from a different hero, and plays the run with that combined bonus. Every base-game hero currently offers exactly one major and one minor (section 5.7).
 
-Mod heroes are not added to this table automatically. By default, a mod hero can be picked, played, and fought entirely normally — it simply never comes up as something the Mimic can borrow from. Declaring the optional `mimic` field opts a mod hero into that draw pool.
+Mod heroes are not added to this pool automatically. By default, a mod hero can be picked and played normally but never comes up as something the Mimic can borrow. Declaring the optional `mimic` field opts it in.
 
 ```json
 {"heroes":[{
@@ -384,30 +423,60 @@ Mod heroes are not added to this table automatically. By default, a mod hero can
 
 | Field | Notes |
 |---|---|
-| `mimic` | Optional object. Omit entirely if this hero should never be offered to the Mimic — there's no minimum, and most mod heroes can simply skip it. |
-| `mimic.major` | Optional. A single perk object: `{desc, bonus, relics?}` (see below). |
-| `mimic.minor` | Optional. Either a single perk object, or an **array** of perk objects for a hero with more than one minor variant (the base game does this for Broodmother and Rat King — each entry becomes its own equal-odds draw, distinct from that hero's other minor(s)). Max 4 entries if an array. |
+| `mimic` | Optional object. Omit entirely if this hero should never be offered to the Mimic. |
+| `mimic.major` | Optional. A single perk object: `{desc, bonus, relics?}`. |
+| `mimic.minor` | Optional. Either a single perk object, or an **array** of up to 4 perk objects for a hero with several minor variants — each entry becomes its own equal-odds draw. (No base-game hero currently uses the array form.) |
 
-At least one of `major`/`minor` is required if `mimic` is present at all — an empty `mimic: {}` is rejected the same way an empty relic is. A hero can offer just a major, just a minor, or both, exactly like base-game heroes (Highroller, for instance, only offers a major).
+At least one of `major`/`minor` is required if `mimic` is present — an empty `mimic: {}` is rejected. A hero can offer just a major, just a minor, or both.
 
-**Perk object fields** (used identically for `major`, and for each entry under `minor`):
+**Perk object fields** (used identically for `major` and each `minor` entry):
 
 | Field | Notes |
 |---|---|
-| `desc` | Required, max 150 chars. Shown to the player as the rolled Mimic's perk description — keep it as terse as the base game's own entries (e.g. *"+1 Mult per Martial card scored"*). |
-| `bonus` | Required, at least one field. Validated exactly like the hero's own top-level `bonus` field (section 5) — any relic-shared field from [3.2](#32-stat-fields), or any hero-only numeric/flag/string field from [5.2](#52-hero-only-numeric-fields)–[5.5](#55-hero-only-string-field). |
-| `relics` | Optional. Array of starting item ids (max 3), granted only when this specific perk is the one rolled. Same rule as the hero's own `relics`/`potions`: must be base-game ids or ids belonging to this same mod. |
+| `desc` | Required, max 150 chars. Shown as the rolled perk's description — keep it terse like the base game's (e.g. *"+1 Mult per Martial card scored"*). |
+| `bonus` | Required, at least one field. Validated exactly like the hero's own `bonus` — any field from [3.2](#32-stat-fields) or [5.2](#52-hero-only-numeric-fields)–[5.5](#55-hero-only-string-field). |
+| `relics` | Optional. Array of starting relic ids (max 3), granted only when this specific perk is rolled. Base-game ids or ids from this same mod. There is no `potions` equivalent. |
 
 **How the draw works, and what modders should know:**
 
-- A Mimic run rolls exactly one major (from every hero — base-game or modded — that has declared one) and one minor (same pool, excluding whichever hero supplied the major), each with equal odds among eligible entries. Your hero's major and minor are independent draws and can end up combined with perks from two different other heroes, or with each other, or not picked at all in a given run.
-- The Mimic's own bonus is the sum of the rolled major's `bonus` and the rolled minor's `bonus` — not your hero's regular top-level `bonus`, which is never used by the Mimic. Design major/minor as self-contained bonuses, not as references to the rest of the hero's kit.
-- `relics`/`potions` under `mimic.major` or `mimic.minor` are a separate grant from the hero's own top-level `relics`/`potions` — the Mimic never receives your hero's own starting items, only whatever the specific rolled perk(s) specify.
-- Because `bonus` reuses the full hero-only field set, it's technically possible to put a whole-kit flag like `randomDeck`, `twinSchoolDeck`, `templarPlasma`, or `startRandomCommonRelic` on a *minor* perk. Nothing stops this validation-wise, but several of these were designed as one hero's entire identity (or, like `startRandomCommonRelic`, interact with a different part of the engine than the normal relic grant) and may combine strangely when layered under an unrelated major. Treat those flags as major-perk material, and stick to additive numeric/flag fields for minors, unless you've specifically tested the combination.
-- As with any hero content, `mimic` perk ids aren't a thing on their own — the whole `mimic` block lives inside your hero's entry and is validated when that hero loads. There's no separate namespacing step; a bad `mimic` block simply fails your hero the same way a bad `bonus` or `hooks` block would (see [Error handling](#error-handling)), with the specific field named in the mod error log.
-- Design intent, not an engine restriction, decides how "on-theme" the perks are — the Mimic doesn't care whether a major/minor makes narrative sense with the donor hero's kit, same as it doesn't for base-game heroes.
+- A Mimic run rolls one major (equal odds among every hero that declares one) and one minor (same pool, excluding the hero that supplied the major; each array entry counts as a separate candidate). Rolls are seeded, so a seeded run always gets the same pair.
+- The Mimic's bonus is the sum of the rolled major's `bonus` and the rolled minor's `bonus` (numbers add; flags/strings from the minor overwrite). Your hero's top-level `bonus`, `relics` and `potions` are never used.
+- **Implicit defaults are off in a Mimic run.** `monkMultX` no longer supplies its +25 Mana and `graveBurial` no longer supplies its +0.25 Mult per missing card — each must come from an explicit `monkChips`/`graveDeckMult` in the rolled perks. This is how the base game splits Monk and Gravekeeper into separate major/minor perks, so put the numeric part of a flag-plus-number mechanic in its own field if you want it to travel with the perk.
+- Whole-kit flags (`randomDeck`, `twinSchoolDeck`, `templarPlasma`, the two start-relic flags) are technically allowed on a minor, but were designed as one hero's identity and may combine strangely. Test such combinations.
+- A bad `mimic` block fails the whole hero, with the specific field named in the mod error log.
+- If a save's rolled donor is later removed (mod disabled/uninstalled), that slot's bonus stops applying on reload — same missing-mod toast/log as a dropped relic or potion, not a crash.
 
-If a save's rolled major/minor donor is later removed (mod disabled/uninstalled), that slot's bonus just stops applying on reload — same missing-mod toast/log as a dropped relic or potion, not a crash.
+### 5.7 Base-game hero perks (reference)
+
+Every base-game hero's full kit is its major + minor combined (Monk and Gravekeeper rely on the implicit defaults above when played directly). Copy any row into a mod hero's `bonus` or `mimic` block to reproduce it exactly.
+
+| Hero | Major `bonus` | Minor `bonus` |
+|---|---|---|
+| Knight | `{"knightValor":true}` | `{"armor":5}` |
+| Cleric | `{"clericHealMult":1,"clericHealMultPer":50}` | `{"healAfterPct":0.08}` |
+| Duelist | `{"duelistRiposteMult":1}` | `{"duelistCritX":2.5,"duelistCritWiden":1}` |
+| Scavenger | `{"goldInterestPct":0.08}` | `{"shopDiscount":0.25}` |
+| Craftsman | `{"craftsmanOneShotChance":0.5}` | `{"craftsmanRelicBoost":0.2}` |
+| Highroller | `{"faceMultX":0.2}` | `{"freeRerolls":1}` |
+| Bard | `{"bardDiscardMana":3}` | `{"discards":2,"bardLuck":0.25}` |
+| Fatespinner | `{"fatespinnerRollDmg":true}` | `{"fatespinnerCritRollGain":1}` |
+| Twinsoul | `{"twinSchoolDeck":true}` | `{"twinsoulMonoMana":10}` |
+| Lottery Saint | `{"randomDeck":true}` | `{"startRandomRelic":true}` |
+| Necromancer | `{"necroRebornCrit":true}` | `{"necroGlanceMult":3}` |
+| Cosmonaut | `{"templarPlasma":true}` | `{"templarReactor":true}` |
+| Warden | `{"wardenHeal":true,"startShield":50}` | `{"wardenArmorMult":true}` |
+| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"startShield":20}` |
+| Brute | `{"bruteRageX":0.5}` | `{"bruteIntimidate":true}` |
+| Bombardier | `{"hands":3,"noDiscards":true}` | `{"glancePct":0.75}` |
+| Mage | `{"handSize":2}` | `{"arcMult":0.5}` |
+| Oddball | `{"oddChips":7,"allOddMult":1.5}` | `{"maxPotions":1,"maxRelicsBonus":1}` |
+| Monk | `{"monkMult":1,"monkMultX":true}` | `{"monkChips":25}` |
+| Ranger | `{"rangerMultX":true}` | `{"rangerMissingCardMult":0.5}` |
+| Broodmother | `{"broodmotherPotionMana":1,"broodmotherPostBattlePotions":2}` | `{"maxPotions":3,"maxRelicsBonus":-3}` |
+| Rat King | `{"ratkingRelicMult":0.25}` | `{"maxRelicsBonus":3,"ratkingCommonOnly":true}` |
+| Gravekeeper | `{"graveBurial":true}` | `{"graveDeckMult":0.25}` |
+
+Starting relics (Cleric's Blessing, Steady Hand, Bulwark Oath, Mage's Focus) belong to the heroes themselves, not their Mimic perks; add them via `relics` if you want them.
 
 ---
 
@@ -446,7 +515,7 @@ Two shapes exist:
 ### 6.2 Which content types get which hooks
 
 - **Relics and heroes** share the full list above.
-- **Potions** get a narrower set — the same list minus `onShopEvent`, `onPotionUse`, and `onRelicRemoved` — plus a potion-only `use` hook (required). `use` fires when the potion is consumed, with `ctx = {potencyMult}` (see section 4). Returning `false` from `use` blocks consumption; anything else lets it proceed.
+- **Potions** get a narrower set — the same list minus `onShopEvent`, `onPotionUse`, `onPickup`, and `onRelicRemoved` — plus a potion-only `use` hook (required). `use` fires when the potion is consumed, with `ctx = {potencyMult}` (see section 4). Returning `false` from `use` blocks consumption; anything else lets it proceed.
 
 ### 6.3 Mod effects (`api.armEffect`)
 
@@ -569,6 +638,7 @@ All action methods are no-ops (returning `0`/`false`/`null` as appropriate) outs
 | `addRelicSlots(n)` / `addPotionSlots(n)` | Adjusts capacity (1–20 cap) |
 | `clearEnemyEffect()` | Clears the current enemy's effect |
 | `setEnemyStat(key, val)` | Sets `hp`\|`shield`\|`armorHp`\|`ac` on the current enemy, clamped to sane bounds |
+| `setEnemyFlag(key, val)` | Combat only. `key` is `cursed` or `poisonTick` (set to `!!val`), or `ac` (0–20). Returns `false` for any other key. |
 | `reduceDamage(n)` / `increaseDamage(n)` | Adjusts in-flight damage (`onDamageTaken` only; `increaseDamage` capped at +50) |
 | `reduceHeal(n)` | Adjusts in-flight healing (`onHeal` only) |
 | `hand.discardAll()` | Discards the whole hand and redraws to cap |
@@ -576,6 +646,8 @@ All action methods are no-ops (returning `0`/`false`/`null` as appropriate) outs
 | `hand.enchant(index, ench)` | Enchants a specific hand-index card |
 | `deck.add(card)` | Adds a card (`{r: 2-14, s: school, ench?}`) to the deck (200-card cap). Returns the new card's uid. |
 | `deck.remove(indices)` | Removes deck cards by index (array or single number), never below a 5-card minimum |
+| `deck.setCard(index, {r?, s?})` | Changes a deck card's rank (2–14) and/or sigil in place; a copy currently in hand updates too |
+| `deck.enchant(index, ench)` | Enchants a deck card by index; a copy currently in hand updates too |
 
 ---
 

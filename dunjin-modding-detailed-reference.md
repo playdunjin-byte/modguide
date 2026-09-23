@@ -177,6 +177,10 @@ A relic needs at least one hook or one recognized field — an empty relic is re
 | `faceMult` | −99 to 99 | Per face card scored |
 | `oddChips` | −999 to 999 | Per odd-rank card scored (3, 5, 7, 9, A) |
 | `monkMult` | −99 to 99 | Flat Mult when 3+ distinct suits are played in one hand. On a hero with the `monkMultX` flag this flat bonus is replaced — see `monkMultX` in 5.3. |
+| `highCardMult` | −99 to 99 | Flat Mult on High Card hands only |
+| `pairMult` | −99 to 99 | Flat Mult on every hand **except** High Card (despite the name, not just Pairs) |
+| `chipsPerDiscard` | −100 to 100 | Mana per discard you still have left this battle (Hoarded Potential uses 10) |
+| `zeroDiscMult` | −99 to 99 | Flat Mult while you have 0 discards left (Conviction uses 3) |
 | `rarityBoost` | 0 to 3 | Added weight toward rarer relics whenever a relic is offered (shop, event, treasure, camp). Stacks with the hero field `craftsmanRelicBoost`. |
 | `curatorSlots` | 0 to 5 | Extra curator-style relic slots in the shop |
 
@@ -624,7 +628,7 @@ All action methods are no-ops (returning `0`/`false`/`null` as appropriate) outs
 | `addMaxHp(n)` | Adjusts max HP (1–9999), and current HP proportionally |
 | `addHands(n)` / `addDiscards(n)` | Adjusts remaining hands/discards this battle |
 | `addTempMult(n)` | Adds temporary Mult for the run (clamped ±99) |
-| `grantRelic()` / `grantPotion()` | Grants a random base-game relic/potion the player doesn't already have (relic) or any base-game potion (potion), respecting capacity. Returns the granted id or `null`. |
+| `grantRelic(id?)` / `grantPotion(id?)` | With an `id`, grants that exact relic/potion — base-game, your own mod's, or another loaded mod's (returns `null` and logs an error if the id isn't loaded). Without one, grants a random base-game item using the game's own rules: normal rarity weighting (plus Craftsman/rarity boosts for relics), and for relics the hero's spawn restrictions (`relicSpawnGate`, `ratkingCommonOnly`), no archived or non-spawnable relics, and nothing already held. Both respect capacity and return the granted id or `null`. |
 | `addRelicSellValue(n)` | Adds to every held relic's sell-value bonus |
 | `setLuckyDie(on)` | Toggles Lucky Die |
 | `setFated(handKey, factor)` | Arms/disarms a Fated-hand bonus (`factor` 1–10, default 2). Pass `handKey: null` to disarm. |
@@ -637,7 +641,7 @@ All action methods are no-ops (returning `0`/`false`/`null` as appropriate) outs
 | `enchantCards(ench, which, n)` | Enchants up to `n` cards. `which` is `"played"` (the cards just played), a school name, or `"random"` (default: any unenchanted card in hand) |
 | `addRelicSlots(n)` / `addPotionSlots(n)` | Adjusts capacity (1–20 cap) |
 | `clearEnemyEffect()` | Clears the current enemy's effect |
-| `setEnemyStat(key, val)` | Sets `hp`\|`shield`\|`armorHp`\|`ac` on the current enemy, clamped to sane bounds |
+| `setEnemyStat(key, val)` | Sets `hp`\|`shield`\|`armorHp`\|`ac`\|`dmg` on the current enemy, clamped to sane bounds. `dmg` is the enemy's ATK and updates its badge immediately. |
 | `setEnemyFlag(key, val)` | Combat only. `key` is `cursed` or `poisonTick` (set to `!!val`), or `ac` (0–20). Returns `false` for any other key. |
 | `reduceDamage(n)` / `increaseDamage(n)` | Adjusts in-flight damage (`onDamageTaken` only; `increaseDamage` capped at +50) |
 | `reduceHeal(n)` | Adjusts in-flight healing (`onHeal` only) |

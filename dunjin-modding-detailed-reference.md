@@ -100,10 +100,10 @@ Enemies are pure data — no hooks, no code.
 | `dmg` | 0–1,000 | |
 | `shield` | 0–100,000, optional (default 0) | Stripped by Arcane damage. |
 | `armor` | 0–100,000, optional (default 0) | Stripped by Shadow damage. |
-| `atk` | one of the ten attack types (below) | |
+| `atk` | one of the twelve attack types (below) | |
 | `effect` | one of the 13 effect keys (below), optional | |
 
-**Attack types:** `bite, crush, dark, fire, ice, lightning, pierce, poison, psychic, slash`.
+**Attack types (12):** `bite, crush, dark, fire, ice, lightning, pierce, poison, psychic, slash, steel, water`. Each carries the same hidden rider it has on base-game enemies (e.g. `slash` steals 5 gold per attack, `steel` is −2 to your d20 rolls, `water` is −1 hand size). The same list is valid for relic `resistTypes` and `vsTypes`.
 
 ### Effects apply at every tier
 
@@ -397,7 +397,7 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 `relicSpawnGate` (array of rarity strings, e.g. `["epic","legendary"]`) — restricts which relic rarities this hero can find, from every source that draws from the relic pool (shop, event rewards, treasure, camp). The engine's single relic-spawn choke point checks this field, so declaring it covers every source automatically.
 
 - Must be a non-empty array; each entry one of the six rarities. Unrecognized entries are rejected; duplicates are silently deduped.
-- `startRandomRelic` goes through the spawn gate; `startRandomCommonRelic` and Rat King's tribute-event relic grant bypass it and always hand out a common relic.
+- The one exception is `startRandomCommonRelic`, which ignores the gate and always grants a common relic at run start (e.g. a hero gated to `["epic","legendary"]` with this flag still starts with one common). `startRandomRelic`, event relics and every other grant respect the gate.
 
 ### 5.5 Hero-only string field
 

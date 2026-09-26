@@ -311,10 +311,12 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 
 | Field | Range | Notes |
 |---|---|---|
-| `startShield` | 0–100 | Starting armor; also raises peak-armor tracking (what `wardenHeal` restores up to) |
+| `startShield` | 0–100 | Starting armor; also raises peak-armor tracking (what `tankHeal` restores up to) |
 | `knightArmor` | 0–50 | Starting armor that doesn't touch peak-armor tracking |
 | `maxPotions`, `maxRelicsBonus` | −3 to 6 each | Slot adjustments from the base **3 potion slots** and **6 relic slots** |
-| `tankGruntDmgMulX` | 0–5 | Multiplier on incoming damage from Grunt-tier enemies only |
+| `tankGruntDmgMulX` | 0–5 | *(deprecated — see note below)* |
+
+> **Note:** the field that actually multiplies incoming damage from Grunt-tier enemies is `wardenGruntDmgMulX` (see below), not `tankGruntDmgMulX`. `tankGruntDmgMulX` does not exist as a validated field in this engine version.
 
 **Scoring**
 
@@ -332,18 +334,22 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 | `rangerMissingCardMult` | 0–5 | Mult per card the played hand is short of 5 (a 1-card hand gets ×4 of this) |
 | `ratkingRelicMult` | 0–2 | Mult per relic held |
 | `monkChips` | 0–100 | **Override.** Flat Mana when a hand contains 3+ distinct suits. Works standalone, or overrides the implicit +25 that `monkMultX` supplies (set `0` to remove it). |
+| `wardenGruntDmgMulX` | 0–5 | Multiplier on incoming damage from Grunt-tier enemies only |
+| `wardenEliteMulX` | 0–5 | Mult multiplier vs Vanguards/Elites; also multiplies your damage on a one-shot kill against one |
+| `wardenVanguardMana` | 0–100 | Every Vanguard defeated permanently adds this much flat Mana to every hand for the rest of the run |
+| `wardenEliteMult` | 0–10 | Every Elite defeated permanently adds this much flat Mult to every hand for the rest of the run |
 | `graveDeckMult` | 0–2 | **Override.** Mult per card your deck is below 52. Works standalone (pair with any deck-thinning), or overrides the implicit +0.25 that `graveBurial` supplies (set `0` to remove it). |
 | `bruteRageX` | 0–1 | Mult × (1 + value × hits taken this battle) |
-| `tankEliteMulX` | 0–5 | Mult multiplier vs Vanguards/Elites; also multiplies your damage on a one-shot kill against one |
-| `tankVanguardMana` | 0–100 | Every Vanguard defeated permanently adds this much flat Mana to every hand for the rest of the run |
-| `tankEliteMult` | 0–10 | Every Elite defeated permanently adds this much flat Mult to every hand for the rest of the run |
+| `tankEliteMulX` | 0–5 | *(deprecated — see note below)* |
 | `bardDiscardMana` | 0–50 | Flat Mana added to your next hand per card discarded this turn |
 | `broodmotherPotionMana` | 0–10 | Each potion consumed permanently adds this much flat Mana to every hand |
 | `monkMultXFactor4` | 1–5 | Pairs with `monkMultX` — the multiplier at 4 distinct suits (default 2) |
 | `rangerMultXFactor` | 1–5 | Pairs with `rangerMultX` — the multiplier on High Card/Pair (default 2) |
-| `wardenArmorMultDivisor` | 1–100 | Pairs with `wardenArmorMult` (default 25) |
+| `tankArmorMultDivisor` | 1–100 | Pairs with `tankArmorMult` (default 25) |
 
-Gains from `tankVanguardMana` and `tankEliteMult` are saved with the run, shown as rows in the in-run Mana/Mult breakdown, and announced with a notification each time they grow.
+> **Note:** the field that multiplies your damage vs Vanguards/Elites is `wardenEliteMulX` (see above), not `tankEliteMulX`. `tankEliteMulX` does not exist as a validated field in this engine version. Likewise `tankVanguardMana` and `tankEliteMult` don't exist — the real fields are `wardenVanguardMana` and `wardenEliteMult`, listed above.
+
+Gains from `wardenVanguardMana` and `wardenEliteMult` are saved with the run, shown as rows in the in-run Mana/Mult breakdown, and announced with a notification each time they grow.
 
 **Rolls & crits**
 
@@ -387,8 +393,8 @@ Gains from `tankVanguardMana` and `tankEliteMult` are saved with the run, shown 
 | Flag | Effect |
 |---|---|
 | `knightValor` | +2 Mult on every hand while at or above 50% HP; +10 Mana instead while below 50% |
-| `wardenHeal` | Healing can also restore armor, up to your peak armor this run |
-| `wardenArmorMult` | +1 Mult per 25 armor held (divisor via `wardenArmorMultDivisor`) |
+| `tankHeal` | Healing can also restore armor, up to your peak armor this run |
+| `tankArmorMult` | +1 Mult per 25 armor held (divisor via `tankArmorMultDivisor`) |
 | `monkMultX` | Monk's suit engine. At 3+ distinct suits: flat Mana equal to `monkChips` (implicitly **+25** if `monkChips` isn't set). At 4 distinct suits: Mult × `monkMultXFactor4` (default 2) — **this multiplier only fires if you also have a non-zero `monkMult` from somewhere** (Monk sets `monkMult: 1` for exactly this reason). With the flag set, `monkMult`'s flat bonus is no longer added. |
 | `graveBurial` | After every battle, the weakest unenchanted card is removed from the deck. Also supplies an implicit **+0.25 Mult per card below 52** unless `graveDeckMult` is set. |
 | `twinSchoolDeck` | The deck is built from two randomly-chosen schools at run start |
@@ -477,8 +483,8 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 | Lottery Saint | `{"randomDeck":true}` | `{"startRandomRelic":true}` |
 | Necromancer | `{"necroRebornCrit":true}` | `{"necroGlanceMult":3}` |
 | Cosmonaut | `{"templarPlasma":true}` | `{"templarReactor":true}` |
-| Warden | `{"wardenHeal":true,"startShield":50}` | `{"wardenArmorMult":true}` |
-| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"tankVanguardMana":3,"tankEliteMult":0.5}` |
+| Warden | `{"wardenEliteMulX":2,"wardenGruntDmgMulX":2}` | `{"wardenVanguardMana":3,"wardenEliteMult":0.5}` |
+| Tank | `{"tankHeal":true,"startShield":50}` | `{"tankArmorMult":true}` |
 | Brute | `{"bruteRageX":0.5}` | `{"bruteIntimidate":true}` |
 | Bombardier | `{"hands":3,"noDiscards":true}` | `{"glancePct":0.75}` |
 | Mage | `{"handSize":2}` | `{"arcMult":0.5}` |

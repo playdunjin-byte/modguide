@@ -265,7 +265,7 @@ No other fields are accepted — a potion only takes `id, name, rarity, desc, de
 
 Inside `use`, `ctx.potencyMult` reflects the game's potion-potency scaling (including hero `potionPotency`/`potionPotencyMaxRarity` bonuses) — read it to scale your effect rather than hardcoding a flat number if you want the potion to interact normally with potency-boosting relics and heroes. Returning `false` from `use` signals that the potion failed to do anything (e.g. no valid target) and blocks it from being consumed; any other return value lets consumption proceed normally.
 
-Players start with **3 potion slots** (see `maxPotions` in 5.2), so a full belt is common. When a potion is granted onto a full belt it converts to gold rather than opening a swap prompt.
+Players start with **3 potion slots** (see `maxPotions` in 5.2), so expect belts to be full more often than in earlier versions.
 
 ---
 
@@ -343,7 +343,7 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 | `rangerMultXFactor` | 1–5 | Pairs with `rangerMultX` — the multiplier on High Card/Pair (default 2) |
 | `wardenArmorMultDivisor` | 1–100 | Pairs with `wardenArmorMult` (default 25) |
 
-Permanent gains from `tankVanguardMana`, `tankEliteMult`, `broodmotherPotionMana`, `clericHealMult` and `duelistRiposteMult` are saved with the run, shown as rows in the in-run Mana/Mult breakdown, and announced with a notification each time they grow.
+Gains from `tankVanguardMana` and `tankEliteMult` are saved with the run, shown as rows in the in-run Mana/Mult breakdown, and announced with a notification each time they grow.
 
 **Rolls & crits**
 
@@ -478,11 +478,11 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 | Necromancer | `{"necroRebornCrit":true}` | `{"necroGlanceMult":3}` |
 | Cosmonaut | `{"templarPlasma":true}` | `{"templarReactor":true}` |
 | Warden | `{"wardenHeal":true,"startShield":50}` | `{"wardenArmorMult":true}` |
-| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"tankVanguardMana":5,"tankEliteMult":1}` |
+| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"tankVanguardMana":10,"tankEliteMult":0.5}` |
 | Brute | `{"bruteRageX":0.5}` | `{"bruteIntimidate":true}` |
 | Bombardier | `{"hands":3,"noDiscards":true}` | `{"glancePct":0.75}` |
 | Mage | `{"handSize":2}` | `{"arcMult":0.5}` |
-| Oddball | `{"oddChips":5,"allOddMult":2.5}` | `{"maxRelicsBonus":1}` |
+| Oddball | `{"oddChips":5,"allOddMult":3}` | `{"maxRelicsBonus":1}` |
 | Monk | `{"monkMult":1,"monkMultX":true}` | `{"monkChips":25}` |
 | Ranger | `{"rangerMultX":true}` | `{"rangerMissingCardMult":0.5}` |
 | Broodmother | `{"broodmotherPotionMana":1,"broodmotherPostBattlePotions":2}` | `{"maxPotions":3,"maxRelicsBonus":-3}` |
@@ -492,7 +492,6 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 Hero-only extras that belong to the heroes themselves, not their Mimic perks:
 
 - **Starting relics:** Cleric (Cleric's Blessing), Fatespinner (Steady Hand) and Mage (Mage's Focus). Add them via `relics` if you want them.
-- **Tank's starting armor:** Tank also has `{"startShield":25}` on his own `bonus`. A Mimic that rolls Tank's minor gets the Mana/Mult gains but not the armor.
 
 ---
 
@@ -640,7 +639,7 @@ All action methods are no-ops (returning `0`/`false`/`null` as appropriate) outs
 | `addMaxHp(n)` | Adjusts max HP (1–9999), and current HP proportionally |
 | `addHands(n)` / `addDiscards(n)` | Adjusts remaining hands/discards this battle |
 | `addTempMult(n)` | Adds temporary Mult for the run (clamped ±99) |
-| `grantRelic(id?)` / `grantPotion(id?)` | With an `id`, grants that exact relic/potion — base-game, your own mod's, or another loaded mod's (returns `null` and logs an error if the id isn't loaded). Without one, grants a random base-game item using the game's own rules: normal rarity weighting (plus Craftsman/rarity boosts for relics), and for relics the hero's spawn restrictions (`relicSpawnGate`, `ratkingCommonOnly`), no archived or non-spawnable relics, and nothing already held. Both respect capacity and return the granted id or `null`; a potion granted onto a full belt converts to gold. |
+| `grantRelic(id?)` / `grantPotion(id?)` | With an `id`, grants that exact relic/potion — base-game, your own mod's, or another loaded mod's (returns `null` and logs an error if the id isn't loaded). Without one, grants a random base-game item using the game's own rules: normal rarity weighting (plus Craftsman/rarity boosts for relics), and for relics the hero's spawn restrictions (`relicSpawnGate`, `ratkingCommonOnly`), no archived or non-spawnable relics, and nothing already held. Both respect capacity and return the granted id or `null`. |
 | `addRelicSellValue(n)` | Adds to every held relic's sell-value bonus |
 | `setLuckyDie(on)` | Toggles Lucky Die |
 | `setFated(handKey, factor)` | Arms/disarms a Fated-hand bonus (`factor` 1–10, default 2). Pass `handKey: null` to disarm. |

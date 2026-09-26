@@ -332,6 +332,9 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 | `twinsoulMonoMana` | 0–100 | Flat Mana on mono-sigil hands (every card the same sigil). No longer used by a base hero, still supported. |
 | `twinsoulHtChips` | 0–20 | Each time a hand type is played, it permanently gains this much Mana for the rest of the run. Shares the per-hand-type store Scholar's Abacus writes to, so the two stack. |
 | `rangerMissingCardMult` | 0–5 | Mult per card the played hand is short of 5 (a 1-card hand gets ×4 of this) |
+| `multPerAttack` | 0–5 | Flat Mult per attack already made this battle (the first attack gets none, the third gets ×2 of this) |
+| `depthMana` | 0–20 | Flat Mana per floor reached this run |
+| `calmStreakMult` | 0–5 | Flat Mult per non-combat node (shop, event, camp, treasure) entered since your last battle. Entering a battle locks the count in for that fight and resets it — the mirror image of Pilgrim's Scar |
 | `ratkingRelicMult` | 0–2 | Mult per relic held |
 | `monkChips` | 0–100 | **Override.** Flat Mana when a hand contains 3+ distinct suits. Works standalone, or overrides the implicit +25 that `monkMultX` supplies (set `0` to remove it). |
 | `wardenGruntDmgMulX` | 0–5 | Multiplier on incoming damage from Grunt-tier enemies only |
@@ -408,6 +411,7 @@ Gains from `wardenVanguardMana` and `wardenEliteMult` are saved with the run, sh
 | `templarPlasma` | Replaces `chips × mult` with `((chips + mult) / 2)²`; triples enemy HP/defense scaling and flee-damage scaling |
 | `templarReactor` | Overkill damage on any killing blow is banked as Mana (overkill ÷ ~67, or ÷ 200 with `templarPlasma`), capped at **+50**. The whole bank is released on your first scoring hand against an Elite or Boss. |
 | `bruteIntimidate` | Each time an enemy attacks you, its ATK drops by 1 for the rest of the battle (minimum 0) |
+| `attackDebuffImmune` | Ignore every enemy attack-type rider (Water's −1 hand size, Steel's −2 roll, Slash's gold theft and so on), exactly like holding Crudestone |
 | `startRandomRelic` | One random **common or uncommon** relic at run start (rarity-weighted). Respects `relicSpawnGate`/`ratkingCommonOnly` and skips relics you already hold. |
 | `startRandomCommonRelic` | One random **common** relic at run start. Bypasses `relicSpawnGate` (skips archived, non-spawnable and already-held relics). If both relic flags are set, this one wins. |
 
@@ -483,8 +487,8 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 | Lottery Saint | `{"randomDeck":true}` | `{"startRandomRelic":true}` |
 | Necromancer | `{"necroRebornCrit":true}` | `{"necroGlanceMult":3}` |
 | Cosmonaut | `{"templarPlasma":true}` | `{"templarReactor":true}` |
-| Warden | `{"wardenEliteMulX":2,"wardenGruntDmgMulX":2}` | `{"wardenVanguardMana":3,"wardenEliteMult":0.5}` |
 | Tank | `{"tankHeal":true,"startShield":50}` | `{"tankArmorMult":true}` |
+| Warden | `{"wardenEliteMulX":2,"wardenGruntDmgMulX":2}` | `{"wardenVanguardMana":3,"wardenEliteMult":0.5}` |
 | Brute | `{"bruteRageX":0.5}` | `{"bruteIntimidate":true}` |
 | Bombardier | `{"hands":3,"noDiscards":true}` | `{"glancePct":0.75}` |
 | Mage | `{"handSize":2}` | `{"arcMult":0.5}` |
@@ -497,7 +501,7 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 
 Hero-only extras that belong to the heroes themselves, not their Mimic perks:
 
-- **Starting relics:** Cleric (Cleric's Blessing), Fatespinner (Steady Hand) and Mage (Mage's Focus). Add them via `relics` if you want them.
+- **Starting relics:** Cleric (Cleric's Blessing), Fatespinner (Steady Hand), Mage (Mage's Focus) and Tank (Bulwark Oath). Add them via `relics` if you want them.
 
 ---
 

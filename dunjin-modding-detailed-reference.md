@@ -314,9 +314,8 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 | `startShield` | 0–100 | Starting armor; also raises peak-armor tracking (what `tankHeal` restores up to) |
 | `knightArmor` | 0–50 | Starting armor that doesn't touch peak-armor tracking |
 | `maxPotions`, `maxRelicsBonus` | −3 to 6 each | Slot adjustments from the base **3 potion slots** and **6 relic slots** |
-| `tankGruntDmgMulX` | 0–5 | *(deprecated — see note below)* |
 
-> **Note:** the field that actually multiplies incoming damage from Grunt-tier enemies is `wardenGruntDmgMulX` (see below), not `tankGruntDmgMulX`. `tankGruntDmgMulX` does not exist as a validated field in this engine version.
+> **Removed:** `tankGruntDmgMulX` no longer exists. Using it gets the item rejected as an unknown field. Use `wardenGruntDmgMulX` (see Scoring below) for extra damage taken from Grunt-tier enemies.
 
 **Scoring**
 
@@ -343,14 +342,13 @@ A value of `0` is normally treated as "not set" and dropped. The two **override*
 | `wardenEliteMult` | 0–10 | Every Elite defeated permanently adds this much flat Mult to every hand for the rest of the run |
 | `graveDeckMult` | 0–2 | **Override.** Mult per card your deck is below 52. Works standalone (pair with any deck-thinning), or overrides the implicit +0.25 that `graveBurial` supplies (set `0` to remove it). |
 | `bruteRageX` | 0–1 | Mult × (1 + value × hits taken this battle) |
-| `tankEliteMulX` | 0–5 | *(deprecated — see note below)* |
 | `bardDiscardMana` | 0–50 | Flat Mana added to your next hand per card discarded this turn |
 | `broodmotherPotionMana` | 0–10 | Each potion consumed permanently adds this much flat Mana to every hand |
 | `monkMultXFactor4` | 1–5 | Pairs with `monkMultX` — the multiplier at 4 distinct suits (default 2) |
 | `rangerMultXFactor` | 1–5 | Pairs with `rangerMultX` — the multiplier on High Card/Pair (default 2) |
 | `tankArmorMultDivisor` | 1–100 | Pairs with `tankArmorMult` (default 25) |
 
-> **Note:** the field that multiplies your damage vs Vanguards/Elites is `wardenEliteMulX` (see above), not `tankEliteMulX`. `tankEliteMulX` does not exist as a validated field in this engine version. Likewise `tankVanguardMana` and `tankEliteMult` don't exist — the real fields are `wardenVanguardMana` and `wardenEliteMult`, listed above.
+> **Removed:** `tankEliteMulX`, `tankVanguardMana` and `tankEliteMult` no longer exist. Using any of them gets the item rejected as an unknown field. Use `wardenEliteMulX`, `wardenVanguardMana` and `wardenEliteMult` (listed above) instead.
 
 Gains from `wardenVanguardMana` and `wardenEliteMult` are saved with the run, shown as rows in the in-run Mana/Mult breakdown, and announced with a notification each time they grow.
 

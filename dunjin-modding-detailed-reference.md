@@ -478,7 +478,7 @@ Every base-game hero's full kit is its major + minor combined, plus any hero-onl
 | Necromancer | `{"necroRebornCrit":true}` | `{"necroGlanceMult":3}` |
 | Cosmonaut | `{"templarPlasma":true}` | `{"templarReactor":true}` |
 | Warden | `{"wardenHeal":true,"startShield":50}` | `{"wardenArmorMult":true}` |
-| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"tankVanguardMana":10,"tankEliteMult":0.5}` |
+| Tank | `{"tankEliteMulX":2,"tankGruntDmgMulX":2}` | `{"tankVanguardMana":3,"tankEliteMult":0.5}` |
 | Brute | `{"bruteRageX":0.5}` | `{"bruteIntimidate":true}` |
 | Bombardier | `{"hands":3,"noDiscards":true}` | `{"glancePct":0.75}` |
 | Mage | `{"handSize":2}` | `{"arcMult":0.5}` |

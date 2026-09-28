@@ -109,6 +109,8 @@ Enemies are pure data — no hooks, no code.
 
 The engine does not gate effects on boss status — it reads `effect` unconditionally, and every consumer of it checks the effect key regardless of tier. The bestiary tooltip and combat ability badge display effects identically at every tier. Base-game enemies only put effects on bosses by design convention, not engine restriction — a modded grunt can carry any effect.
 
+**Bosses are the exception.** Every run rolls a random curse for its boss, so a boss's `effect` field is ignored. Leave it out on boss-tier enemies.
+
 ### Effect list (13)
 
 | Key | Name | Effect |

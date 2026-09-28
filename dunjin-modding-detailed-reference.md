@@ -393,7 +393,7 @@ Gains from `wardenVanguardMana` and `wardenEliteMult` are saved with the run, sh
 
 | Flag | Effect |
 |---|---|
-| `knightValor` | +2 Mult on every hand while at or above 50% HP; +10 Mana instead while below 50% |
+| `knightValor` | +10 Mana on every hand while at or above 50% HP; +2 Mult instead while below 50% |
 | `tankHeal` | Healing can also restore armor, up to your peak armor this run |
 | `tankArmorMult` | +1 Mult per 25 armor held (divisor via `tankArmorMultDivisor`) |
 | `monkMultX` | Monk's suit engine. At 3+ distinct suits: flat Mana equal to `monkChips` (implicitly **+25** if `monkChips` isn't set). At 4 distinct suits: Mult × `monkMultXFactor4` (default 2) — **this multiplier only fires if you also have a non-zero `monkMult` from somewhere** (Monk sets `monkMult: 1` for exactly this reason). With the flag set, `monkMult`'s flat bonus is no longer added. |

@@ -238,7 +238,7 @@ These hero fields are also valid on relics. They stack with the hero's own value
 
 Reserved keys that are never validated as stat fields (used for other purposes): `id, name, rarity, desc, descT, svg, hooks, echoCompatKeys, echoIncompatible, combo, vsTypes, vsTier, resistTypes`.
 
-`descT` is optional on relics, same as on potions — a secondary description line base-game items use for a dynamic/numeric variant of the flavor text (e.g. showing the live rolled value of an effect). It's accepted and stored but not required.
+`descT` is optional on relics but currently ignored: it passes validation and isn't stored. It's only used on potions.
 
 ### 3.3 Hooks on relics
 
@@ -787,9 +787,10 @@ Hook bodies are compiled with `new Function(...)`, not `eval`, and run with the 
 
 - **Length cap**: 4,000 characters per hook body (32,000 for `lib`).
 - **No loops**: `while`, `for`, and `do` are banned in the source text — use `map`/`filter`/`reduce`/`forEach` instead.
-- **No `constructor`, `eval`, `__proto__`/`__defineGetter__`/`__lookupGetter__`, `import`/`export`, or `debugger`** — all banned by pattern match on the hook source.
-- **Randomness and time**: `Math.random` inside a hook returns a seeded value, so older mods stay reproducible, but it won't match between a preview and the real score. Use `api.rng`. `Date`, `performance` and `crypto` are shadowed, so calling them throws.
-- **Shadowed globals**: `Date, performance, crypto, window, document, globalThis, self, top, parent, frames, opener, run, combat, META, RELICS, POTIONS, ENEMIES, localStorage, sessionStorage, indexedDB, fetch, XMLHttpRequest, WebSocket, Worker, Function, require, process, module, exports, navigator, location, history, alert, open, postMessage, Reflect, Proxy, saveMeta, saveGame, loadGame, applyDamage, damagePlayer, toast, sfx` are all passed in as function parameters bound to `undefined`, so referencing any of them by name inside a hook resolves to `undefined` rather than the real object — the only way to touch game state is through `api`.
+- **No `constructor`, `eval`, `__proto__`/`__defineGetter__`/`__lookupGetter__`, `import`/`export`, or `debugger`** — all banned by pattern match on the hook source. `constructor` and `__proto__` are also rejected when split across string concatenation. `\u` escapes aren't allowed anywhere in hook source.
+- **Randomness and time**: `Math.random` inside a hook returns a seeded value, so older mods stay reproducible, but it won't match between a preview and the real score. Use `api.rng`. `Date`, `performance` and `crypto` aren't available.
+- **Allowed globals**: hooks can only see `Math` (seeded `random`), `Array`, `Number`, `String`, `Boolean`, `JSON`, `Map`, `Set`, `WeakMap`, `WeakSet`, `Symbol`, `BigInt`, `RegExp`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `console`, and `Object` limited to `keys`, `values`, `entries`, `fromEntries`, `assign` and `freeze`. Every other name resolves to `undefined`, including all browser APIs, timers and game functions. The only way to touch game state is through `api`.
+- **Locked built-ins**: once a mod with code loads, built-in prototypes are frozen for that session and `.constructor` on functions is `undefined`. Adding to `Array.prototype` throws.
 - A hook that throws is caught, logged as a mod error (naming the offending item and hook), and treated as a no-op for that call — it doesn't crash the run.
 
 ### 8.1 Shared helpers (`lib`)
@@ -806,6 +807,10 @@ Hooks compile separately, so they can't see each other's variables. Put shared c
 - Capped at 32,000 characters per file, with the same banned patterns as hooks, including the loop ban.
 - `api` and `ctx` don't exist in `lib`, so pass them to your helpers.
 - Several files can each have a `lib`. Their helpers merge, and a duplicate name is a load error.
+
+### Display text
+
+Text fields (`name`, `desc`, `descT`, `blurb`, `perks`, `unlockDesc` and Mimic `desc`) are HTML-escaped, so they show literally and can't carry markup. Enemy `n` can't contain `<`, `>`, `&` or `"`.
 
 ### SVG icons (`svg` field on enemies, relics, potions, heroes)
 

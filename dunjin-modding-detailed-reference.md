@@ -57,6 +57,8 @@ A mod (synced from Workshop) is a folder containing:
   ```
   A mod doesn't need all four. `heroes` may also be spelled `classes` — both keys are read. As a shorthand, an enemies file may also just be a bare JSON array instead of `{"enemies": [...]}`.
 
+- **`lib`** (optional, top level of any content file) — shared helper code for the whole mod. See [8.1](#81-shared-helpers-lib).
+
 - Duplicate `manifest.json` ids across subscribed items: the second one is rejected outright with a "duplicate mod id" error, and none of its content loads.
 - Load order: mods load after the base game's content pools exist, and before any save is loaded (saves can reference mod content by id string).
 
@@ -138,7 +140,7 @@ The engine does not gate effects on boss status — it reads `effect` unconditio
 
 Relics come in two flavors: **stat-only** (pure JSON) and **hook-driven** (JavaScript). Prefer stat-only whenever the effect fits — it's less error-prone and gets Echo Chamber mirroring and Relic Jam suppression for free, since the engine's relic-summing logic already walks every relic (mod or base-game) and its Echo Chamber mirror the same way.
 
-Every relic needs an `id`, a `name` (max 48 chars), a `rarity`, and a `desc` (max 300 chars). A relic also needs at least one hook or one recognized stat field — an empty relic is rejected. Unknown fields are rejected loudly, never dropped silently. This includes the hero-only fields in sections 5.2–5.5: they are not recognized on relics and fail validation as unknown fields.
+Every relic needs an `id`, a `name` (max 48 chars), a `rarity`, and a `desc` (max 300 chars). A relic also needs at least one hook or one recognized stat field — an empty relic is rejected. Unknown fields are rejected loudly, never dropped silently. This includes most hero-only fields in sections 5.2–5.5, which fail validation as unknown fields on relics. The exceptions are listed under **Hero scoring fields on relics** in 3.2.
 
 `rarity` alone drives shop price, sell value, and the item's color/border everywhere it's displayed — the same lookup table base-game relics use. There's no separate price or sell-value field to set; picking the right rarity string is all that's needed.
 
@@ -220,6 +222,20 @@ Every relic needs an `id`, a `name` (max 48 chars), a `rarity`, and a `desc` (ma
 | `goldAfter` | 0 to 500 | Flat gold after battle win |
 | `healAfterPct` | 0 to 0.5 | % max-HP heal after battle win |
 
+**Hero scoring fields on relics**
+
+These hero fields are also valid on relics. They stack with the hero's own value, respect Relic Jam, and count as stat fields for Echo Chamber auto-mirroring.
+
+| Field | Range | Notes |
+|---|---|---|
+| `ratkingRelicMult` | 0 to 2 | Multiplicative: Mult × (1 + value × relics held) |
+| `allOddMult` | −10 to 10 | Flat Mult if every played card is odd-ranked |
+| `multPerAttack` | 0 to 5 | Flat Mult per attack already made this battle |
+| `depthMana` | 0 to 20 | Flat Mana per floor reached |
+| `calmStreakMult` | 0 to 5 | Flat Mult per non-combat node since your last battle |
+| `rangerMissingCardMult` | 0 to 5 | Mult per card the hand is short of 5 |
+| `twinsoulMonoMana` | 0 to 100 | Flat Mana on mono-sigil hands |
+
 Reserved keys that are never validated as stat fields (used for other purposes): `id, name, rarity, desc, descT, svg, hooks, echoCompatKeys, echoIncompatible, combo, vsTypes, vsTier, resistTypes`.
 
 `descT` is optional on relics, same as on potions — a secondary description line base-game items use for a dynamic/numeric variant of the flavor text (e.g. showing the live rolled value of an effect). It's accepted and stored but not required.
@@ -247,7 +263,15 @@ Note that `relicCount` does not count a copy that is currently jammed (e.g. by t
 
 ### 3.5 Persistent state
 
-`api.state.get(default)` / `api.state.set(value)` gives per-item-id, JSON-serializable scratch space — auto-namespaced by the item's own id, so two mods (or two relics) never collide. A non-serializable value passed to `set` fails silently (logged as a mod error) rather than corrupting the save.
+Three scopes are available, all JSON-serializable. A non-serializable value fails with a logged mod error rather than corrupting the save.
+
+| API | Scope | Lifetime |
+|---|---|---|
+| `api.state.get(default)` / `set(value)` | This item id | This run, saved with it |
+| `api.shared.get(key, default)` / `set(key, value)` | Every item in this mod | This run, saved with it |
+| `api.persist.get(key, default)` / `set(key, value)` | Every item in this mod | Across runs, on this profile. 8,192 bytes per mod. Pass `undefined` to delete a key. |
+
+`persist` differs between players, so anything it influences breaks seeded-run reproducibility. Use it for unlocks and tallies, not for rolls.
 
 ---
 
@@ -281,7 +305,7 @@ Players start with **3 potion slots** (see `maxPotions` in 5.2), so expect belts
 Heroes combine base run stats with a `bonus` object (internally `run.clsBonus`). Fields in `bonus` draw from three pools:
 
 1. **Relic-shared fields** — anything from [section 3.2](#32-stat-fields) works identically here.
-2. **Hero-only numeric/flag/string fields** — read directly off `run.clsBonus` by dedicated engine checks, and never flow through the general relic-summing logic. These are only accepted on heroes (and Mimic perks); on a relic they are rejected as unknown fields.
+2. **Hero-only numeric/flag/string fields** — read directly off `run.clsBonus` by dedicated engine checks. These are only accepted on heroes (and Mimic perks); on a relic they are rejected as unknown fields, apart from the short list in 3.2.
 3. **Hero-only array field** (`relicSpawnGate`) — same rule, validated as a list of rarity strings.
 
 Heroes may also declare `hooks`, using the same mechanism as relics.
@@ -307,6 +331,9 @@ Heroes may also declare `hooks`, using the same mechanism as relics.
 | `color` | Hex value like `#9fd0ff` (defaults to `#cdb47e`) |
 | `bonus` | Optional object — see the field pools above. |
 | `relics`, `potions` | Arrays of starting item ids, max 3 entries each. Must be base-game ids or ids belonging to this same mod — a hero can't depend on another mod's content. |
+| `startDeck` | Optional. Replaces the 52-card deck. Array of `{r, s, ench?, count?}` holding 5–200 cards in total (`r` 2–14, `s` a sigil, `count` 1–52). Can't be combined with `randomDeck` or `twinSchoolDeck`. |
+| `startDeckAdd` | Optional. Same card format, 1–100 cards, added on top of the starting deck. Applied after `startDeck` and the deck flags. |
+| `startHandUpgrades` | Optional. Object keyed by hand type: `{"pair":{"chips":10,"mult":2}}` (`chips` 0–200, `mult` 0–20). Starts the run with those upgrades banked. |
 | `cost` | Optional, 0–9999. If set, the hero is coin-purchasable instead of free-from-start. `unlockDesc` defaults to "Purchase for N coins" (max 120 chars) if not supplied. |
 | `difficulty` | Optional, 1–5 (default 1). Star rating on hero-select. Unrelated to the run's overall difficulty setting. |
 | `mimic` | Optional. Offers this hero's perks as Mimic major/minor draw candidates. See [5.6](#56-mimic-compatibility-major--minor-perks). |
@@ -475,7 +502,7 @@ At least one of `major`/`minor` is required if `mimic` is present — an empty `
 **How the draw works, and what modders should know:**
 
 - A Mimic run rolls one major (equal odds among every hero that declares one) and one minor (same pool, excluding the hero that supplied the major; each array entry counts as a separate candidate). Rolls are seeded, so a seeded run always gets the same pair.
-- The Mimic's bonus is the sum of the rolled major's `bonus` and the rolled minor's `bonus` (numbers add; flags/strings from the minor overwrite). Your hero's top-level `bonus`, `relics` and `potions` are never used.
+- The Mimic's bonus is the sum of the rolled major's `bonus` and the rolled minor's `bonus` (numbers add; flags/strings from the minor overwrite). Your hero's top-level `bonus`, `relics`, `potions`, `startDeck`, `startDeckAdd` and `startHandUpgrades` are never used.
 - **Implicit defaults are off in a Mimic run.** `monkMultX` no longer supplies its +15 Mana and `graveBurial` no longer supplies its +0.5 Mult per missing card — each must come from an explicit `monkChips`/`graveDeckMult` in the rolled perks. This is how the base game splits Monk and Gravekeeper into separate major/minor perks, so put the numeric part of a flag-plus-number mechanic in its own field if you want it to travel with the perk.
 - Whole-kit flags (`randomDeck`, `twinSchoolDeck`, `templarPlasma`, the two start-relic flags) are technically allowed on a minor, but were designed as one hero's identity and may combine strangely. Test such combinations.
 - A bad `mimic` block fails the whole hero, with the specific field named in the mod error log.
@@ -529,13 +556,27 @@ Two shapes exist:
 - **Mutating hooks** fire mid-calculation. Whatever the hook does to the relevant `api` value (via `api.addMult`/`api.addMana`/`api.reduceDamage`/etc., or directly returning it — see each hook's row) feeds back into the actual result.
 - **Observational hooks** fire after the fact, for reacting only — nothing you do in them changes the outcome that already happened.
 
+Hooks marked **pure** run with effects off, because the game calls them repeatedly for display. Only the scope methods named in their row work there.
+
 | Hook | Fires | `ctx` payload | Mutating? |
 |---|---|---|---|
 | `onScoreHand` | While a hand's chips/mult are being calculated | `{handType, cardCount}` | Yes — `api.addMana`/`api.addMult`/`api.multiplyMult` feed into the final chips/mult |
 | `onHandResolved` | After a hand is fully scored and played | `{chips, mult, handType}` | No |
-| `onDamageTaken` | While incoming damage is being applied to the player | `{amount, raw, ignoreArmor, cause, type}` | Yes — `api.reduceDamage`/`api.increaseDamage` change the final amount |
-| `onHeal` | While a heal is being applied to the player | `{amount}` | Yes — `api.reduceHeal` lowers the final amount |
-| `onBattleStart` | At the start of combat | `{enemyName, boss, elite}` | No |
+| `onDamageTaken` | While incoming damage is applied to the player: enemy attacks, poison, Fire scorch and event damage. Fires after armor and shield. | `{amount, raw, ignoreArmor, cause, type}` | Yes — `api.reduceDamage`/`api.increaseDamage`/`api.multiplyDamage` change the final amount |
+| `onHeal` | While a heal is being applied to the player | `{amount}` | Yes — `api.reduceHeal`/`api.increaseHeal` change the final amount |
+| `onDeath` | HP reached 0, after Soul Anchor. Not fired when fleeing a boss, which is always fatal. | `{cause, enemyName}` | Yes — `api.survive(hp)` cancels the death (default 1 HP). The first hook to survive stops the rest. |
+| `onRunStart` | Once, when a new run is created, after the deck, relics and potions are set. Not on resume. | `{seed, seeded, heroId, difficulty}` | No |
+| `onBattleStart` | Before combat is built, so `api.combat.*` and combat actions don't work yet. Use `onTurnStart` with `ctx.first`. | `{enemyName, boss, elite}` | No |
+| `onTurnStart` | Each player turn, once the hand is dealt | `{turn, first, handsLeft}` | No |
+| `onTurnEnd` | After the enemy's attack, before redrawing. Not fired if the enemy died or you did. | `{turn, handsLeft}` | No |
+| `onCardPlayed` | Once per card in a played hand, before `onHandResolved` | `{uid, r, s, ench, index, count, handType}` | No |
+| `onBeforeRoll` | After the d20 is rolled, before hit or crit is decided | `{roll, bonus, total, ac, critThreshold}` | Yes — `api.setRoll`/`api.addRoll`/`api.setCritThreshold` |
+| `onBeforeDamageDealt` | Before damage reaches the enemy's shield, armor and HP. Skipped for `api.dealDamage` called from inside this hook. Kill previews don't include it. | `{amount, mode, type}` | Yes — `api.reduceDamage`/`api.increaseDamage`/`api.multiplyDamage` |
+| `onShopPrice` | **Pure.** Once per shop item whenever prices are calculated, after discounts | `{kind, id, rarity, base, price}` | Yes — `api.setPrice`/`api.multiplyPrice` |
+| `onRelicOffer` | **Pure.** Once per relic whenever a spawn pool is built | `{id, rarity, isMod}` | Yes — `api.banOffer()` removes it from that pool. `grantRelic(id)` ignores this. |
+| `onCampRest` | Rest or Deep Sleep at a camp, before healing | `{amount, kind: "rest"|"sleep"}` | Yes — `api.reduceHeal`/`api.increaseHeal` |
+| `onEventResolved` | After an event or camp choice takes effect | `{title, choice, label, camp}` | No |
+| `onEffectExpired` | An armed effect's duration ran out. Not fired by `clearEffect()`. | `{kind: "hands"|"battles"}` | No |
 | `onBattleEnd` | At the end of combat, win or lose | `{outcome: "win"|"lose", enemyName, boss}` (`boss` only present on win) | No |
 | `onDiscard` | When cards are discarded | `{count, discardsLeft}` | No |
 | `onShopEvent` | On a shop transaction | `{event, kind, cost}` (fields vary by event) | No |
@@ -543,7 +584,7 @@ Two shapes exist:
 | `onRoll` | After a d20 roll resolves | `{roll, total, bonus, mode, crit, fumble, hit, glance, ac, critThreshold}` | No |
 | `onNodeEnter` | When entering a map node | `{type, depth, x, combatStreak}` | No |
 | `onPotionUse` | When a potion is consumed | `{potionId, rarity}` | No |
-| `onRelicRemoved` | When a relic is discarded or sold, before removal | `{relicId, isMod, goldGained}` | No |
+| `onRelicRemoved` | After a relic is discarded, sold or destroyed. Fires on your other relics and also on the removed relic itself, so it can clean up. | `{relicId, isMod, goldGained}` | No |
 | `onDamageDealt` | After the player deals damage, once shield/armor/HP layer-peeling is resolved | `{hp, shield, armor, total, mode, crit}` (`total` = shield+armor+HP combined). Fires unconditionally, including on 0-damage hits, and reports damage *before* any later cursed-enemy multiplier is applied. | No |
 | `onCardAdded` | When a card is added to the deck, from any source (mod, base relic, shop, etc.) | `{uid, r, s, ench, toDraw}` | No |
 | `onCardRemoved` | When a card is removed from the deck, from any source | `{uid, r, s, ench}` | No |
@@ -553,18 +594,34 @@ Two shapes exist:
 ### 6.2 Which content types get which hooks
 
 - **Relics and heroes** share the full list above.
-- **Potions** get a narrower set — the same list minus `onShopEvent`, `onPotionUse`, `onPickup`, and `onRelicRemoved` — plus a potion-only `use` hook (required). `use` fires when the potion is consumed, with `ctx = {potencyMult}` (see section 4). Returning `false` from `use` blocks consumption; anything else lets it proceed.
+- **Potions** get a narrower set — the same list minus `onRunStart`, `onShopEvent`, `onPotionUse`, `onPickup`, and `onRelicRemoved` — plus a potion-only `use` hook (required). A potion's other hooks only fire while its effect is armed. `use` fires when the potion is consumed, with `ctx = {potencyMult}` (see section 4). Returning `false` from `use` blocks consumption; anything else lets it proceed.
 
 ### 6.3 Mod effects (`api.armEffect`)
 
-A potion's `use` hook can call `api.armEffect(...)` to register a temporary or permanent buff/debuff under the potion's own id. Once armed, the engine looks that id up **in the potion pool** each time it fires relic-style hooks — so this mechanism is specifically for potions to grant a multi-turn or multi-battle effect rather than a single instant one; calling it from a relic or hero hook arms an effect that will never be found and so never fires. See `armEffect`/`clearEffect` in section 7 for the exact interface.
+`api.armEffect(...)` means two different things depending on who calls it.
+
+**From a potion**, it keeps the potion's hooks firing after it's consumed. The engine looks the id up in the potion pool each time it fires hooks, until the effect expires.
+
+**From a relic or hero**, it's a timer. Held relics and heroes already fire every hook, so arming never fires them a second time. Gate your own hooks on `api.effect()`, and react to the end in `onEffectExpired`:
+
+```json
+{"hooks":{
+  "onBattleStart":"api.armEffect({hands:3});",
+  "onScoreHand":"if (api.effect()) api.addMult(5);",
+  "onEffectExpired":"api.toast('The surge fades');"
+}}
+```
+
+- Each item id has one effect. Arming again replaces it.
+- An effect armed in `onHandResolved` doesn't lose a hand to the hand that armed it. The same goes for `battles` in `onBattleEnd`.
+- A relic's effect, counter and rows are removed when its last copy leaves.
 
 ### 6.4 Requirements & length limits
 
 - A relic needs at least one hook or one recognized stat field.
 - A hero may have zero hooks and zero bonus fields and still be valid — there's no minimum for heroes.
 - A potion always needs at least the `use` hook.
-- Hook bodies are capped at 4,000 characters (see section 8 for full sandbox rules).
+- Hook bodies are capped at 4,000 characters (see section 8 for full sandbox rules). Move shared or longer code to `lib`.
 
 ---
 
@@ -621,6 +678,7 @@ The id of the relic/potion/hero currently executing this hook. Use this instead 
 |---|---|
 | `enemy()` | `{n, hp, maxHp, armorHp, shield, ac, atkType, effect, boss, elite, vanguard, cursed}` or `null` outside combat |
 | `handType()` | The hand type key currently being scored (`onScoreHand` only) |
+| `handNumber()` | 1-based number of the hand being scored, or of the last hand played. Matches between the preview and the real score, so it's safe in `api.rng` keys. |
 | `handsMax()` / `discardsMax()` | Battle caps |
 | `enemyAttackType()` | Current enemy's attack type |
 | `sigilCounts()` | Copy of sigils played so far this battle |
@@ -634,7 +692,11 @@ The id of the relic/potion/hero currently executing this hook. Use this instead 
 
 ### 7.4 `api.state` (persistent scratch space)
 
-See section 3.5.
+See section 3.5, which also covers `api.shared` and `api.persist`.
+
+`api.effect()` returns this item's armed effect as `{hands, battles, permanent}`, or `null`. See section 6.3.
+
+`api.lib` is this mod's helper object. See section 8.1.
 
 ### 7.5 `api.account` (read-only)
 
@@ -670,17 +732,26 @@ Enchantment arguments (`enchantCards`, `hand.enchant`, `deck.add`'s `ench`, `dec
 | `setFated(handKey, factor)` | Arms/disarms a Fated-hand bonus (`factor` 1–10, default 2). Pass `handKey: null` to disarm. |
 | `addEchoCharges(n, copies)` | Adjusts Echo charges (0–99) and/or sets Echo copy count (1–10) |
 | `setRebound(pct)` | Sets rebound-heal percentage (0–1) |
-| `armEffect(opts)` | Registers a temporary/permanent mod effect under the calling item's id — `opts.hands` or `opts.battles` sets a duration in hands/battles; omitting both makes it permanent. See section 6.3. |
+| `armEffect(opts)` | Registers a temporary/permanent mod effect under the calling item's id — `opts.hands` or `opts.battles` sets a duration in hands/battles; omitting both makes it permanent. Works differently for potions and for relics/heroes: see section 6.3. |
 | `clearEffect()` | Removes the calling item's armed effect |
 | `setNullSigil(sigil)` / `nullSigil()` | Sets/reads the currently-nullified sigil (like the `sigilsour` enemy effect). Pass `null` to clear. |
 | `setDemandSigil(sigil)` | Sets the currently-demanded sigil (like the `demand` enemy effect). Pass `null` to clear. |
 | `enchantCards(ench, which, n)` | Enchants up to `n` cards. `which` is `"played"` (the cards just played), a school name, or `"random"` (default: any unenchanted card in hand) |
-| `addRelicSlots(n)` / `addPotionSlots(n)` | Adjusts capacity (1–20 cap) |
+| `addRelicSlots(n)` / `addPotionSlots(n)` | Adjusts capacity (1–20 cap). Persists through later slot recalculations. |
+| `rng(key)` | See below. |
 | `clearEnemyEffect()` | Clears the current enemy's effect |
 | `setEnemyStat(key, val)` | Sets `hp`\|`shield`\|`armorHp`\|`ac`\|`dmg` on the current enemy, clamped to sane bounds (`ac` clamps to 0–30 here, unlike the 0–20 limit in `setEnemyFlag` and in enemy JSON). `dmg` is the enemy's ATK and updates its badge immediately. |
 | `setEnemyFlag(key, val)` | Combat only. `key` is `cursed` or `poisonTick` (set to `!!val`), or `ac` (0–20). Returns `false` for any other key. |
-| `reduceDamage(n)` / `increaseDamage(n)` | Adjusts in-flight damage (`onDamageTaken` only; `increaseDamage` capped at +50) |
-| `reduceHeal(n)` | Adjusts in-flight healing (`onHeal` only) |
+| `reduceDamage(n)` / `increaseDamage(n)` / `multiplyDamage(x)` | Adjusts in-flight damage (`onDamageTaken`, `onBeforeDamageDealt`). `increaseDamage` is capped at +50 per call, `multiplyDamage` at ×10. |
+| `reduceHeal(n)` / `increaseHeal(n)` | Adjusts in-flight healing (`onHeal`, `onCampRest`) |
+| `survive(hp)` | `onDeath` only. Cancels the death and sets HP (default 1, capped at max HP). |
+| `setRoll(n)` / `addRoll(n)` / `setCritThreshold(n)` | `onBeforeRoll` only. `setRoll` sets the natural roll (1–20), and setting 1 becomes 2 if the player is fumble-immune. `addRoll` adds to the bonus (±20 per call). `setCritThreshold` takes 2–20. |
+| `setPrice(n)` / `multiplyPrice(x)` | `onShopPrice` only. Rounded, minimum 0. |
+| `banOffer()` | `onRelicOffer` only. |
+| `removeRelic(target, opts)` | `target` is a relic id, a relic index, or empty for this relic. Destroys it for no gold, or pays its sell value with `{sell:true}`. Echo Chamber targets, slot caps and `onRelicRemoved` are handled for you. Not allowed during `onScoreHand`. Returns `true` on success. |
+| `removePotion(target)` | `target` is a potion id or index. No gold. Can't remove the potion being used. Returns `true` on success. |
+| `setCounter(value)` | Shows a badge of up to 4 characters on this relic's chip. Pass `null` to clear. Relics only, since heroes and potions have no chip. |
+| `setRow(kind, value, opts)` | Adds a row for this item to the held section of the Mana/Mult breakdown. `kind` is `mult` or `mana`. `opts.how` is the description (100 chars); `opts.x` shows it as a multiplier and leaves it out of the total. Pass `null` or `0` to clear. **Display only:** it doesn't change scoring, so call it alongside `addMult`/`addMana`. |
 | `hand.discardAll()` | Discards the whole hand and redraws to cap |
 | `hand.discard(indices)` | Discards specific hand indices (array or single number) and redraws to cap |
 | `hand.enchant(index, ench)` | Enchants a specific hand-index card |
@@ -689,17 +760,52 @@ Enchantment arguments (`enchantCards`, `hand.enchant`, `deck.add`'s `ench`, `dec
 | `deck.setCard(index, {r?, s?})` | Changes a deck card's rank (2–14) and/or sigil in place; a copy currently in hand updates too |
 | `deck.enchant(index, ench)` | Enchants a deck card by index; a copy currently in hand updates too |
 
+### 7.7 Randomness (`api.rng`)
+
+Use `api.rng` for every random decision. It's a pure function of the run seed, your item id, your `key`, and the current loop, depth and map position. It doesn't advance the game's RNG, so previews, other mods and other rolls aren't affected, and the result survives save and reload.
+
+| Method | Returns |
+|---|---|
+| `api.rng(key)` | Float from 0 up to 1 |
+| `api.rng.int(n, key)` | Integer from 0 to `n − 1` |
+| `api.rng.chance(p, key)` | `true` with probability `p` |
+| `api.rng.pick(array, key)` | One element |
+
+**The same key at the same node always returns the same value.** That's what keeps a preview and the real score in agreement. For a fresh roll, change the key:
+
+```js
+if (api.rng.chance(0.25, 'proc' + api.combat.handNumber())) api.addMult(10);
+```
+
+Use different keys for different decisions in one hook, or they'll be correlated.
+
 ---
 
 ## 8. Sandbox Restrictions
 
 Hook bodies are compiled with `new Function(...)`, not `eval`, and run with the following restrictions:
 
-- **Length cap**: 4,000 characters per hook body.
+- **Length cap**: 4,000 characters per hook body (32,000 for `lib`).
 - **No loops**: `while`, `for`, and `do` are banned in the source text — use `map`/`filter`/`reduce`/`forEach` instead.
 - **No `constructor`, `eval`, `__proto__`/`__defineGetter__`/`__lookupGetter__`, `import`/`export`, or `debugger`** — all banned by pattern match on the hook source.
-- **Shadowed globals**: `window, document, globalThis, self, top, parent, frames, opener, run, combat, META, RELICS, POTIONS, ENEMIES, localStorage, sessionStorage, indexedDB, fetch, XMLHttpRequest, WebSocket, Worker, Function, require, process, module, exports, navigator, location, history, alert, open, postMessage, Reflect, Proxy, saveMeta, saveGame, loadGame, applyDamage, damagePlayer, toast, sfx` are all passed in as function parameters bound to `undefined`, so referencing any of them by name inside a hook resolves to `undefined` rather than the real object — the only way to touch game state is through `api`.
+- **Randomness and time**: `Math.random` inside a hook returns a seeded value, so older mods stay reproducible, but it won't match between a preview and the real score. Use `api.rng`. `Date`, `performance` and `crypto` are shadowed, so calling them throws.
+- **Shadowed globals**: `Date, performance, crypto, window, document, globalThis, self, top, parent, frames, opener, run, combat, META, RELICS, POTIONS, ENEMIES, localStorage, sessionStorage, indexedDB, fetch, XMLHttpRequest, WebSocket, Worker, Function, require, process, module, exports, navigator, location, history, alert, open, postMessage, Reflect, Proxy, saveMeta, saveGame, loadGame, applyDamage, damagePlayer, toast, sfx` are all passed in as function parameters bound to `undefined`, so referencing any of them by name inside a hook resolves to `undefined` rather than the real object — the only way to touch game state is through `api`.
 - A hook that throws is caught, logged as a mod error (naming the offending item and hook), and treated as a no-op for that call — it doesn't crash the run.
+
+### 8.1 Shared helpers (`lib`)
+
+Hooks compile separately, so they can't see each other's variables. Put shared code in a top-level `lib` string in a content file. It runs once at load and must return an object. Every hook in the mod can then reach it as `api.lib`.
+
+```json
+{
+  "lib": "const scale = (api, n) => n * api.run.relicCount(api.id); return { scale };",
+  "relics": [{"id":"bogpack_tide","name":"Tide","rarity":"rare","desc":"+3 Mult per copy.","hooks":{"onScoreHand":"api.addMult(api.lib.scale(api, 3));"}}]
+}
+```
+
+- Capped at 32,000 characters per file, with the same banned patterns as hooks, including the loop ban.
+- `api` and `ctx` don't exist in `lib`, so pass them to your helpers.
+- Several files can each have a `lib`. Their helpers merge, and a duplicate name is a load error.
 
 ### SVG icons (`svg` field on enemies, relics, potions, heroes)
 

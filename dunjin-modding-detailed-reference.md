@@ -296,7 +296,7 @@ No other fields are accepted — a potion only takes `id, name, rarity, desc, de
 
 Inside `use`, `ctx.potencyMult` reflects the game's potion-potency scaling (including hero `potionPotency`/`potionPotencyMaxRarity` bonuses) — read it to scale your effect rather than hardcoding a flat number if you want the potion to interact normally with potency-boosting relics and heroes. Returning `false` from `use` signals that the potion failed to do anything (e.g. no valid target) and blocks it from being consumed; any other return value lets consumption proceed normally.
 
-Players start with **3 potion slots** (see `maxPotions` in 5.2), so expect belts to be full more often than in earlier versions.
+Players start with **3 potion slots** (see `maxPotions` in 5.2).
 
 ---
 

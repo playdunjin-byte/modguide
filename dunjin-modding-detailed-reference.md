@@ -108,7 +108,7 @@ Enemies are pure data — no hooks, no code.
 | `atk` | one of the twelve attack types (below) | |
 | `effect` | one of the 13 effect keys (below), optional | |
 
-**Attack types (12):** `bite, crush, dark, fire, ice, lightning, pierce, poison, psychic, slash, steel, water`. Each carries the same hidden rider it has on base-game enemies (e.g. `slash` steals 5 gold per attack, `steel` is −2 to your d20 rolls, `water` is −1 hand size). The same list is valid for relic `resistTypes` and `vsTypes`.
+**Attack types (12):** `bite, crush, dark, fire, ice, lightning, pierce, poison, psychic, slash, steel, water`. Each carries the same hidden rider it has on base-game enemies (e.g. `slash` steals gold per attack, `steel` is −2 to your d20 rolls, `water` is −1 hand size). The same list is valid for relic `resistTypes` and `vsTypes`.
 
 ### Effects apply at every tier
 
